@@ -57,7 +57,7 @@
     <div><h1>🍲 Miso</h1><div class="status"><span class="status-dot" id="statusDot"></span><span id="statusText">Connecting...</span></div></div>
     <form action="/logout" method="POST"><button class="logout" type="submit">Logout</button></form>
   </header>
-  <div class="messages" id="messages"><div class="message miso">Hey there! 👋 Connected! What would you like?</div></div>
+  <div class="messages" id="messages"></div>
   <div class="typing" id="typingIndicator" style="display: none;"><span></span><span></span><span></span></div>
   <div class="quick-actions">
     <button class="quick-btn" onclick="quickAction('generate')">🎲 Generate</button>
@@ -74,7 +74,7 @@
     const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i;
     const URL_REGEX = /(https?:\/\/[^\s<]+)/g;
     
-    let ws = null, reconnectAttempts = 0, maxReconnectAttempts = 10, reconnectTimeout = null, messageQueue = [];
+    let ws = null, reconnectAttempts = 0, maxReconnectAttempts = 10, reconnectTimeout = null, messageQueue = [], historyLoaded = false;
     const messagesDiv = document.getElementById('messages'), messageInput = document.getElementById('messageInput'), sendBtn = document.getElementById('sendBtn');
     const statusDot = document.getElementById('statusDot'), statusText = document.getElementById('statusText'), offlineBanner = document.getElementById('offlineBanner'), typingIndicator = document.getElementById('typingIndicator');
 
@@ -83,7 +83,14 @@
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       statusDot.className = 'status-dot connecting'; statusText.textContent = 'Connecting...';
       ws = new WebSocket(`${protocol}//${window.location.host}`);
-      ws.onopen = () => { statusDot.className = 'status-dot connected'; statusText.textContent = 'Online'; offlineBanner.classList.remove('show'); reconnectAttempts = 0; sendQueuedMessages(); };
+      ws.onopen = () => {
+        statusDot.className = 'status-dot connected';
+        statusText.textContent = 'Online';
+        offlineBanner.classList.remove('show');
+        reconnectAttempts = 0;
+        historyLoaded = false;
+        sendQueuedMessages();
+      };
       ws.onclose = () => { statusDot.className = 'status-dot'; statusText.textContent = 'Disconnected'; scheduleReconnect(); };
       ws.onerror = (err) => console.error('WebSocket error:', err);
       ws.onmessage = (event) => {
@@ -100,6 +107,15 @@
               statusDot.className = 'status-dot connecting';
               statusText.textContent = 'Connecting gateway...';
               offlineBanner.classList.add('show');
+            }
+          } else if (data.type === 'history') {
+            renderHistory(data.messages || []);
+            historyLoaded = true;
+          } else if (data.type === 'queue') {
+            if (typeof data.pending === 'number' && data.pending > 0) {
+              statusText.textContent = `Online · queue ${data.pending}`;
+            } else {
+              statusText.textContent = 'Online';
             }
           } else if (data.type === 'typing') {
             showTyping(data.show);
@@ -135,13 +151,32 @@
     function showTyping(show) { typingIndicator.style.display = show ? 'flex' : 'none'; if (show) messagesDiv.scrollTop = messagesDiv.scrollHeight; }
     function hideTyping() { typingIndicator.style.display = 'none'; }
 
-    function addMessage(sender, content) {
+    function renderHistory(messages) {
+      messagesDiv.innerHTML = '';
+      if (!Array.isArray(messages) || messages.length === 0) {
+        addMessage('miso', 'Hey there! 👋 Connected! What would you like?', null, false);
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        return;
+      }
+
+      for (const msg of messages) {
+        const sender = msg.role === 'user' ? 'user' : 'miso';
+        addMessage(sender, msg.content, msg.timestamp, false);
+      }
+      messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    }
+
+    function addMessage(sender, content, timestamp = null, autoScroll = true) {
       const div = document.createElement('div'); div.className = 'message ' + sender;
-      // Parse content for URLs and images
-      const processed = processContent(content);
+      const processed = processContent(String(content || ''));
       div.innerHTML = processed;
-      const time = document.createElement('div'); time.className = 'time'; time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      div.appendChild(time); messagesDiv.appendChild(div); messagesDiv.scrollTop = messagesDiv.scrollHeight;
+      const time = document.createElement('div');
+      time.className = 'time';
+      const dt = timestamp ? new Date(timestamp) : new Date();
+      time.textContent = dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      div.appendChild(time);
+      messagesDiv.appendChild(div);
+      if (autoScroll) messagesDiv.scrollTop = messagesDiv.scrollHeight;
     }
 
     function processContent(text) {

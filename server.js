@@ -256,6 +256,7 @@ const GATEWAY_HTTP_URL = GATEWAY_RAW_URL.replace(/^ws:/, 'http:').replace(/^wss:
 const GATEWAY_TOKEN = process.env.GATEWAY_AUTH_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '';
 const GATEWAY_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || 'agent:main:main';
 const SEND_TIMEOUT_SECONDS = Number(process.env.SEND_TIMEOUT_SECONDS || 180);
+const HISTORY_LIMIT = Number(process.env.HISTORY_LIMIT || 50);
 
 function gatewayInvoke(tool, args = {}) {
   return new Promise((resolve, reject) => {
@@ -321,6 +322,38 @@ function extractReplyText(reply) {
   if (typeof reply?.content === 'string') return reply.content;
   if (Array.isArray(reply?.content)) return reply.content.map((p) => (typeof p === 'string' ? p : p?.text || p?.content || '')).join('\n').trim();
   return '';
+}
+
+function normalizeHistoryMessages(payload) {
+  const raw = payload?.history || payload?.messages || [];
+  const out = [];
+
+  for (const item of raw) {
+    const role = item?.role || item?.message?.role || 'assistant';
+    if (role !== 'user' && role !== 'assistant') continue;
+
+    const content = extractReplyText(item?.content ?? item?.message?.content ?? item?.text ?? item?.message?.text);
+    const text = (content || '').trim();
+    if (!text) continue;
+
+    out.push({
+      role,
+      content: text,
+      timestamp: item?.timestamp || item?.ts || item?.createdAt || null,
+    });
+  }
+
+  return out;
+}
+
+async function loadSessionHistory() {
+  const result = await gatewayInvoke('sessions_history', {
+    sessionKey: GATEWAY_SESSION_KEY,
+    limit: HISTORY_LIMIT,
+    includeTools: false,
+  });
+  const payload = unwrapToolResult(result);
+  return normalizeHistoryMessages(payload);
 }
 
 async function sendSessionMessage(message) {
@@ -390,6 +423,14 @@ wss.on('connection', (ws) => {
     safeSend({ error: 'Gateway auth token is missing.' });
   } else {
     safeSend({ type: 'status', connected: true });
+    loadSessionHistory()
+      .then((messages) => {
+        safeSend({ type: 'history', messages });
+      })
+      .catch((err) => {
+        console.error('History load failed:', err.message);
+        safeSend({ type: 'history', messages: [] });
+      });
   }
 
   ws.on('message', (message) => {
