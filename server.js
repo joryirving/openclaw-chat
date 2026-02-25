@@ -369,7 +369,7 @@ function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
           ws.send(
             JSON.stringify({
               id: sendId,
-              type: 'chat.send',
+              method: 'chat.send', type: 'req',
               params: {
                 sessionKey,
                 text: message,
