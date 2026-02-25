@@ -248,204 +248,117 @@ server.on('upgrade', (request, socket, head) => {
   });
 });
 
-// Gateway WebSocket connection (OpenClaw protocol v3)
-const crypto = require('crypto');
-let gatewayWs = null;
-let gatewayReady = false;
-let reconnectAttempts = 0;
-let heartbeat;
-let gatewayConnReqId = null;
-const gatewayPendingSends = [];
-const GATEWAY_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || 'main';
+// Gateway bridge via /tools/invoke (sessions_send)
+const https = require('https');
 
-function nextReconnectDelayMs() {
-  const base = 1000;
-  const max = 30000;
-  const exp = Math.min(max, base * Math.pow(2, reconnectAttempts));
-  const jitter = Math.floor(Math.random() * 500);
-  return exp + jitter;
-}
+const GATEWAY_RAW_URL = process.env.GATEWAY_URL || 'http://openclaw.llm.svc.cluster.local:18789';
+const GATEWAY_HTTP_URL = GATEWAY_RAW_URL.replace(/^ws:/, 'http:').replace(/^wss:/, 'https:');
+const GATEWAY_TOKEN = process.env.GATEWAY_AUTH_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN || '';
+const GATEWAY_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || 'agent:main:main';
+const SEND_TIMEOUT_SECONDS = Number(process.env.SEND_TIMEOUT_SECONDS || 60);
 
-function broadcastToClients(payload) {
-  const wire = JSON.stringify(payload);
-  wss.clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(wire);
-    }
-  });
-}
+function gatewayInvoke(tool, args = {}) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({ tool, args });
+    const url = new URL('/tools/invoke', GATEWAY_HTTP_URL);
+    const transport = url.protocol === 'https:' ? https : http;
 
-function sendGatewayReq(method, params = {}) {
-  if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) return null;
-  const id = crypto.randomUUID();
-  gatewayWs.send(JSON.stringify({ type: 'req', id, method, params }));
-  return id;
-}
-
-function flushQueuedMessages() {
-  while (gatewayPendingSends.length > 0 && gatewayReady) {
-    const msg = gatewayPendingSends.shift();
-    sendGatewayReq('chat.send', {
-      sessionKey: GATEWAY_SESSION_KEY,
-      message: msg,
-      idempotencyKey: crypto.randomUUID(),
-    });
-  }
-}
-
-function parseGatewayChatEvent(payload) {
-  const msg = payload?.message;
-  if (!msg) return null;
-  if (typeof msg === 'string') return msg;
-  if (typeof msg?.content === 'string') return msg.content;
-  if (Array.isArray(msg?.content)) {
-    return msg.content.map((c) => (typeof c === 'string' ? c : c?.text || '')).join('');
-  }
-  if (typeof msg?.text === 'string') return msg.text;
-  return null;
-}
-
-function requestHistory() {
-  sendGatewayReq('chat.history', { sessionKey: GATEWAY_SESSION_KEY, limit: 40 });
-}
-
-function handleGatewayFrame(raw) {
-  let frame;
-  try {
-    frame = JSON.parse(raw.toString());
-  } catch {
-    return;
-  }
-
-  if (frame.type === 'event' && frame.event === 'connect.challenge') {
-    const params = {
-      minProtocol: 3,
-      maxProtocol: 3,
-      client: {
-        id: 'cli',
-        version: '1.0.0',
-        platform: 'node',
-        mode: 'cli',
+    const req = transport.request(
+      {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(postData),
+          ...(GATEWAY_TOKEN ? { Authorization: `Bearer ${GATEWAY_TOKEN}` } : {}),
+        },
       },
-      role: 'operator',
-      scopes: ['operator.read', 'operator.write'],
-      auth: {},
-      locale: 'en-US',
-      userAgent: 'miso-chat/1.0.0',
-    };
-    const gatewayToken = process.env.GATEWAY_AUTH_TOKEN || process.env.OPENCLAW_GATEWAY_TOKEN || process.env.GATEWAY_TOKEN;
-    if (gatewayToken) {
-      params.auth.token = gatewayToken;
-    }
-    gatewayConnReqId = crypto.randomUUID();
-    gatewayWs.send(JSON.stringify({ type: 'req', id: gatewayConnReqId, method: 'connect', params }));
-    return;
-  }
-
-  if (frame.type === 'res') {
-    if (frame.id === gatewayConnReqId) {
-      if (frame.ok) {
-        gatewayReady = true;
-        reconnectAttempts = 0;
-        const grantedScopes = frame.payload?.auth?.scopes || [];
-        console.log('Gateway protocol connect complete. scopes=', grantedScopes.join(','));
-        requestHistory();
-        flushQueuedMessages();
-        broadcastToClients({ type: 'status', connected: true });
-      } else {
-        gatewayReady = false;
-        console.error('Gateway connect rejected:', frame.error?.message || frame.error || 'unknown');
-        broadcastToClients({ type: 'error', content: `Gateway auth/connect failed: ${frame.error?.message || 'unknown'}` });
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+        res.on('end', () => {
+          try {
+            const json = JSON.parse(data);
+            if (json.ok) return resolve(json.result);
+            return reject(new Error(json.error?.message || `Gateway invoke failed (${res.statusCode})`));
+          } catch {
+            return reject(new Error(`Invalid gateway response: ${String(data).slice(0, 200)}`));
+          }
+        });
       }
-      return;
-    }
+    );
 
-    if (!frame.ok) return;
-
-    // chat.history response
-    const payload = frame.payload;
-    if (Array.isArray(payload)) {
-      for (const item of payload) {
-        const text = parseGatewayChatEvent({ message: item?.message || item });
-        if (text) broadcastToClients({ content: text });
-      }
-    } else if (Array.isArray(payload?.messages)) {
-      for (const item of payload.messages) {
-        const text = parseGatewayChatEvent({ message: item?.message || item });
-        if (text) broadcastToClients({ content: text });
-      }
-    }
-    return;
-  }
-
-  if (frame.type === 'event' && frame.event === 'chat') {
-    const text = parseGatewayChatEvent(frame.payload);
-    if (text) {
-      broadcastToClients({ content: text });
-    }
-    return;
-  }
-}
-
-function connectToGateway() {
-  const gatewayUrl = process.env.GATEWAY_URL || 'ws://localhost:18789';
-  console.log(`Connecting to gateway: ${gatewayUrl}`);
-
-  gatewayReady = false;
-  gatewayWs = new WebSocket(gatewayUrl);
-
-  gatewayWs.on('open', () => {
-    console.log('Gateway socket opened; waiting for connect.challenge...');
-    startHeartbeat();
-  });
-
-  gatewayWs.on('message', handleGatewayFrame);
-
-  gatewayWs.on('close', () => {
-    gatewayReady = false;
-    if (heartbeat) clearInterval(heartbeat);
-    reconnectAttempts += 1;
-    const delay = nextReconnectDelayMs();
-    console.log(`Gateway disconnected, reconnecting in ${delay}ms...`);
-    broadcastToClients({ type: 'status', connected: false });
-    setTimeout(connectToGateway, delay);
-  });
-
-  gatewayWs.on('error', (err) => {
-    gatewayReady = false;
-    console.error('Gateway error:', err.message);
-    if (heartbeat) clearInterval(heartbeat);
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
   });
 }
 
-function startHeartbeat() {
-  if (heartbeat) clearInterval(heartbeat);
-  let awaitingPong = false;
-  gatewayWs.on('pong', () => { awaitingPong = false; });
-  heartbeat = setInterval(() => {
-    if (!gatewayWs || gatewayWs.readyState !== WebSocket.OPEN) return;
-    if (awaitingPong) {
-      console.warn('Gateway pong timeout, terminating socket');
-      try { gatewayWs.terminate(); } catch (_) {}
-      return;
+function unwrapToolResult(result) {
+  if (!result) return {};
+  if (result.details && typeof result.details === 'object') return result.details;
+  const text = result?.content?.find?.((x) => x?.type === 'text')?.text;
+  if (text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { text };
     }
-    awaitingPong = true;
-    gatewayWs.ping();
-  }, 25000);
+  }
+  return result;
 }
 
-// Handle client WebSocket connections
+function extractReplyText(reply) {
+  if (!reply) return '';
+  if (typeof reply === 'string') return reply;
+  if (Array.isArray(reply)) return reply.map((r) => extractReplyText(r)).filter(Boolean).join('\n');
+  if (typeof reply?.text === 'string') return reply.text;
+  if (typeof reply?.message === 'string') return reply.message;
+  if (typeof reply?.content === 'string') return reply.content;
+  if (Array.isArray(reply?.content)) return reply.content.map((p) => (typeof p === 'string' ? p : p?.text || p?.content || '')).join('\n').trim();
+  return '';
+}
+
+async function sendSessionMessage(message) {
+  const result = await gatewayInvoke('sessions_send', {
+    sessionKey: GATEWAY_SESSION_KEY,
+    message,
+    timeoutSeconds: SEND_TIMEOUT_SECONDS,
+  });
+
+  const payload = unwrapToolResult(result);
+  const status = payload?.status;
+  if (status && status !== 'ok' && status !== 'accepted') {
+    throw new Error(payload?.error || `sessions_send returned status=${status}`);
+  }
+
+  const replyText = extractReplyText(payload?.reply || payload?.response || payload?.details?.reply);
+  if (replyText) return replyText;
+
+  if (status === 'accepted') {
+    return 'Message accepted.';
+  }
+
+  if (payload?.error) throw new Error(payload.error);
+  return '';
+}
+
+// Handle browser WebSocket connections
 wss.on('connection', (ws) => {
   console.log('Client connected');
 
-  if (gatewayReady) {
-    ws.send(JSON.stringify({ type: 'status', connected: true }));
-    requestHistory();
-  } else {
+  if (!GATEWAY_TOKEN) {
     ws.send(JSON.stringify({ type: 'status', connected: false }));
+    ws.send(JSON.stringify({ error: 'Gateway auth token is missing.' }));
+  } else {
+    ws.send(JSON.stringify({ type: 'status', connected: true }));
   }
 
-  ws.on('message', (message) => {
+  ws.on('message', async (message) => {
     let payload;
     try {
       payload = JSON.parse(message.toString());
@@ -453,20 +366,23 @@ wss.on('connection', (ws) => {
       return;
     }
 
-    if (payload?.type === 'message' && typeof payload?.content === 'string') {
-      const msg = payload.content.trim();
-      if (!msg) return;
+    if (payload?.type !== 'message' || typeof payload?.content !== 'string') return;
 
-      if (gatewayReady) {
-        sendGatewayReq('chat.send', {
-          sessionKey: GATEWAY_SESSION_KEY,
-          message: msg,
-          idempotencyKey: crypto.randomUUID(),
-        });
+    const msg = payload.content.trim();
+    if (!msg) return;
+
+    ws.send(JSON.stringify({ type: 'typing', show: true }));
+    try {
+      const reply = await sendSessionMessage(msg);
+      if (reply) {
+        ws.send(JSON.stringify({ content: reply }));
       } else {
-        gatewayPendingSends.push(msg);
-        ws.send(JSON.stringify({ error: 'Gateway offline, message queued' }));
+        ws.send(JSON.stringify({ error: 'No reply content returned.' }));
       }
+    } catch (err) {
+      ws.send(JSON.stringify({ error: `Send failed: ${err.message}` }));
+    } finally {
+      ws.send(JSON.stringify({ type: 'typing', show: false }));
     }
   });
 
@@ -480,13 +396,13 @@ wss.on('connection', (ws) => {
 });
 
 function start() {
-  connectToGateway();
   const PORT = process.env.PORT || 3000;
   return server.listen(PORT, () => {
     console.log(`
 🎉 OpenClaw Chat Server running on port ${PORT}
    
-   Gateway: ${process.env.GATEWAY_URL || 'ws://localhost:18789'}
+   Gateway: ${GATEWAY_HTTP_URL}
+   Session key: ${GATEWAY_SESSION_KEY}
    Auth: ${process.env.OIDC_ENABLED === 'true' ? 'OIDC' : 'Local'}
    Node Env: ${process.env.NODE_ENV || 'development'}
    
@@ -499,4 +415,4 @@ if (require.main === module) {
   start();
 }
 
-module.exports = { app, server, start, validateConfig, nextReconnectDelayMs };
+module.exports = { app, server, start, validateConfig };
