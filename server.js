@@ -357,8 +357,8 @@ function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
               platform: process.platform,
               mode: 'webchat',
             },
-            role: 'operator',
-            scopes: ['operator.read', 'operator.write'],
+            role: 'operator', // DEBUG,
+            scopes: ['operator.read', 'operator.write', 'chat.send', 'sessions.send', 'sessions.list', 'sessions.history'],
             caps: [],
             ...(GATEWAY_TOKEN
               ? {
