@@ -473,34 +473,9 @@
         
         function connect() {
             if (!currentSessionKey) return;
-            
-            statusText.textContent = 'Connecting...';
-            if (ws) ws.close();
-            
-            ws = new WebSocket(`ws://${window.location.host}/api/sessions/${currentSessionKey}/ws`);
-            
-            ws.onopen = () => {
-                statusDot.classList.add('connected');
-                statusText.textContent = 'Online';
-                reconnectAttempts = 0;
-            };
-            
-            ws.onclose = () => {
-                statusDot.classList.remove('connected');
-                statusText.textContent = 'Offline';
-            };
-            
-            ws.onerror = (e) => console.error('WS error:', e);
-            
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    handleMessage(data);
-                } catch (e) {
-                    if (event.data.trim()) addMessage('miso', event.data);
-                }
-                typingIndicator.classList.remove('active');
-            };
+            // HTTP mode (no gateway WS handshake from browser app)
+            statusDot.classList.add('connected');
+            statusText.textContent = 'Online';
         }
         
         function handleMessage(data) {
