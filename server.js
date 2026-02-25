@@ -345,10 +345,28 @@ function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
     ws.on('open', () => {
       ws.send(
         JSON.stringify({
+          type: 'req',
           id: connectId,
-          type: 'connect',
+          method: 'connect',
           params: {
-            clientId: GATEWAY_WS_CLIENT_ID,
+            minProtocol: 3,
+            maxProtocol: 3,
+            client: {
+              id: GATEWAY_WS_CLIENT_ID,
+              version: 'miso-chat/1.0.0',
+              platform: process.platform,
+              mode: 'webchat',
+            },
+            role: 'operator',
+            scopes: ['operator.read', 'operator.write'],
+            caps: [],
+            ...(GATEWAY_TOKEN
+              ? {
+                  auth: {
+                    token: GATEWAY_TOKEN,
+                  },
+                }
+              : {}),
           },
         })
       );
@@ -368,12 +386,13 @@ function gatewayChatSend({ sessionKey, message, timeoutSeconds, origin }) {
           connected = true;
           ws.send(
             JSON.stringify({
+              type: 'req',
               id: sendId,
-              method: 'chat.send', type: 'req',
+              method: 'chat.send',
               params: {
                 sessionKey,
-                text: message,
                 message,
+                deliver: false,
                 idempotencyKey: createRequestId('msg'),
               },
             })
