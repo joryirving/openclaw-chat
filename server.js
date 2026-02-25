@@ -100,8 +100,22 @@ const isAuthenticated = (req, res, next) => {
 };
 
 // Login
-app.get('/login', (req, res) => res.sendFile(__dirname + '/public/login.html'));
-app.post('/login', passport.authenticate('local', { successRedirect: '/', failureRedirect: '/login?error=invalid' }));
+app.get('/login', (req, res) => {
+  if (process.env.OIDC_ENABLED === 'true') {
+    return res.redirect('/auth/oidc');
+  }
+  return res.sendFile(__dirname + '/public/login.html');
+});
+
+app.post('/login', (req, res, next) => {
+  if (process.env.OIDC_ENABLED === 'true') {
+    return res.redirect('/auth/oidc');
+  }
+  return passport.authenticate('local', {
+    successRedirect: '/',
+    failureRedirect: '/login?error=invalid',
+  })(req, res, next);
+});
 app.get('/auth/oidc', passport.authenticate('oidc'));
 app.get('/auth/oidc/callback', passport.authenticate('oidc', { successRedirect: '/', failureRedirect: '/login?error=oidc_failed' }));
 app.post('/logout', (req, res) => {
