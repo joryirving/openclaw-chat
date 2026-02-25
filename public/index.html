@@ -8,7 +8,7 @@
     <meta name="theme-color" content="#1a1a2e">
     <meta name="format-detection" content="telephone=no">
     
-    <title>Miso</title>
+    <title>Miso Chat</title>
     
     <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%23e94560'/><text y='65' x='50' text-anchor='middle' font-size='50'>🍲</text></svg>">
     <link rel="apple-touch-startup-image" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%231a1a2e' width='100' height='100'/><text y='65' x='50' text-anchor='middle' font-size='50'>🍲</text></svg>">
@@ -108,9 +108,31 @@
             border-radius: 8px;
             padding: 6px 10px;
             font-size: 12px;
-            max-width: 140px;
+            max-width: 150px;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        .header-controls {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 14px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .icon-btn:active {
+            transform: scale(0.96);
         }
         
         @keyframes pulse {
@@ -356,15 +378,19 @@
     <header class="header">
         <div class="avatar">🍲</div>
         <div class="header-info">
-            <h1>Miso</h1>
+            <h1 id="assistantName">Miso</h1>
             <div class="status">
                 <span class="status-dot" id="statusDot"></span>
                 <span id="statusText">Connecting...</span>
             </div>
         </div>
-        <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
-            <option value="">Loading sessions...</option>
-        </select>
+        <div class="header-controls">
+            <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
+            <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
+                <option value="">Loading sessions...</option>
+            </select>
+            <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">⎋</button>
+        </div>
     </header>
     
     <div class="messages" id="messages">
@@ -381,12 +407,6 @@
         </div>
     </div>
     
-    <div class="quick-actions" id="quickActions">
-        <button class="quick-btn" onclick="quickAction('generate')">🎲 Generate</button>
-        <button class="quick-btn" onclick="quickAction('casual')">👕 Casual</button>
-        <button class="quick-btn" onclick="quickAction('elegant')">👗 Elegant</button>
-        <button class="quick-btn" onclick="quickAction('cute')">✨ Cute</button>
-    </div>
     
     <div class="input-area">
         <div class="input-wrapper">
@@ -401,12 +421,13 @@
     </div>
 
     <script>
-        // Configuration - use same origin API
         let currentSessionKey = null;
-        let ws = null;
-        let reconnectAttempts = 0;
-        const maxReconnectAttempts = 5;
-        
+        let defaultSessionKey = 'agent:main:main';
+        let sendQueue = [];
+        let sending = false;
+
+        const SESSION_STORAGE_KEY = 'miso.selectedSessionKey';
+
         const messagesDiv = document.getElementById('messages');
         const messageInput = document.getElementById('messageInput');
         const sendBtn = document.getElementById('sendBtn');
@@ -414,201 +435,201 @@
         const statusText = document.getElementById('statusText');
         const typingIndicator = document.getElementById('typingIndicator');
         const sessionSelect = document.getElementById('sessionSelect');
-        
-        // Load sessions on page load
+        const assistantNameEl = document.getElementById('assistantName');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+
+        function setOnlineState(online, text = null) {
+            statusDot.classList.toggle('connected', !!online);
+            statusText.textContent = text || (online ? 'Online' : 'Offline');
+            messageInput.disabled = !online;
+            sendBtn.disabled = !online;
+        }
+
+        function buildSessionLabel(session) {
+            const key = session.sessionKey || '';
+            const shortKey = key.slice(0, 8);
+            const title = session.title || session.displayName || session.channel || session.kind || 'session';
+            return `${title} · ${shortKey}`;
+        }
+
+        function addMessage(sender, content) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            bubble.textContent = String(content || '');
+            div.appendChild(bubble);
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        function renderHistory(messages) {
+            messagesDiv.innerHTML = '';
+            if (!Array.isArray(messages) || messages.length === 0) {
+                addMessage('system', '📝 New session');
+                return;
+            }
+            messages.forEach((msg) => {
+                addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content);
+            });
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const cfg = await response.json();
+                if (cfg?.assistantName) {
+                    assistantNameEl.textContent = cfg.assistantName;
+                    messageInput.placeholder = `Message ${cfg.assistantName}...`;
+                }
+                if (cfg?.title) document.title = cfg.title;
+                if (cfg?.defaultSessionKey) defaultSessionKey = cfg.defaultSessionKey;
+            } catch (error) {
+                console.warn('Config load failed:', error);
+            }
+        }
+
         async function loadSessions() {
             try {
                 const response = await fetch('/api/sessions');
                 const data = await response.json();
-                
+                const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+
+                if (data.defaultSessionKey) defaultSessionKey = data.defaultSessionKey;
+
                 sessionSelect.innerHTML = '<option value="">Select session...</option>';
-                
-                if (data.sessions && data.sessions.length > 0) {
-                    data.sessions.forEach(session => {
-                        const option = document.createElement('option');
-                        option.value = session.sessionKey;
-                        const shortKey = session.sessionKey.substring(0, 8);
-                        option.textContent = shortKey;
-                        sessionSelect.appendChild(option);
-                    });
-                    
-                    if (data.sessions.length > 0) {
-                        selectSession(data.sessions[0].sessionKey);
-                    }
-                } else {
-                    sessionSelect.innerHTML = '<option value="">No sessions</option>';
+
+                sessions.forEach((session) => {
+                    const option = document.createElement('option');
+                    option.value = session.sessionKey;
+                    option.textContent = buildSessionLabel(session);
+                    sessionSelect.appendChild(option);
+                });
+
+                if (sessions.length === 0) {
+                    setOnlineState(false, 'No sessions');
+                    return;
                 }
+
+                const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+                const preferred = stored || defaultSessionKey || sessions[0].sessionKey;
+                const selected = sessions.find((s) => s.sessionKey === preferred) || sessions[0];
+                await selectSession(selected.sessionKey);
             } catch (error) {
                 console.error('Error loading sessions:', error);
                 sessionSelect.innerHTML = '<option value="">Error</option>';
+                setOnlineState(false, 'Session load failed');
             }
         }
-        
-        // Select a session
+
         async function selectSession(sessionKey) {
             if (!sessionKey) return;
-            
+
             currentSessionKey = sessionKey;
+            localStorage.setItem(SESSION_STORAGE_KEY, sessionKey);
             sessionSelect.value = sessionKey;
-            messagesDiv.innerHTML = '';
-            
-            // Load history
+            setOnlineState(true, 'Loading history...');
+
             try {
-                const response = await fetch(`/api/sessions/${sessionKey}/history`);
+                const response = await fetch(`/api/sessions/${encodeURIComponent(sessionKey)}/history`);
                 const data = await response.json();
-                
-                if (data.messages && data.messages.length > 0) {
-                    data.messages.forEach(msg => {
-                        addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content);
-                    });
+                renderHistory(data.messages || []);
+                setOnlineState(true, 'Online');
+            } catch (error) {
+                console.error('History load error:', error);
+                renderHistory([]);
+                setOnlineState(true, 'Online');
+            }
+        }
+
+        async function processQueue() {
+            if (sending || sendQueue.length === 0) return;
+            if (!currentSessionKey) return;
+
+            sending = true;
+            const next = sendQueue.shift();
+
+            if (sendQueue.length > 0) {
+                setOnlineState(true, `Online · queue ${sendQueue.length}`);
+            } else {
+                setOnlineState(true, 'Online');
+            }
+
+            typingIndicator.classList.add('active');
+            try {
+                const response = await fetch(`/api/sessions/${encodeURIComponent(currentSessionKey)}/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: next }),
+                });
+                const data = await response.json();
+
+                if (!data?.success) {
+                    addMessage('system', data?.error || 'Send failed');
                 } else {
-                    addMessage('system', '📝 New session');
+                    const text = data.responseText || data.response?.text || data.response?.message;
+                    if (text && text.trim()) {
+                        addMessage('miso', text);
+                    }
                 }
             } catch (error) {
-                addMessage('system', '📝 New session');
-            }
-            
-            connect();
-        }
-        
-        function connect() {
-            if (!currentSessionKey) return;
-            // HTTP mode (no gateway WS handshake from browser app)
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Online';
-        }
-        
-        function handleMessage(data) {
-            // Hide typing indicator
-            typingIndicator.classList.remove('active');
-            
-            if (data.type === 'message' || data.content) {
-                const content = data.content || data.text || data.message || JSON.stringify(data);
-                addMessage('miso', content);
-            }
-            
-            // Handle images
-            const images = data.images || data.attachments || [];
-            images.forEach(img => {
-                addImage(img.url || img);
-            });
-            
-            // Handle rich content
-            if (data.components || data.buttons) {
-                // Could add button handling here
+                console.error('Send error:', error);
+                addMessage('system', `Send failed: ${error.message}`);
+            } finally {
+                typingIndicator.classList.remove('active');
+                sending = false;
+                setOnlineState(true, sendQueue.length > 0 ? `Online · queue ${sendQueue.length}` : 'Online');
+                if (sendQueue.length > 0) processQueue();
             }
         }
-        
-        function addMessage(sender, content) {
-            const div = document.createElement('div');
-            div.className = `message ${sender}`;
-            
-            const bubble = document.createElement('div');
-            bubble.className = 'bubble';
-            bubble.textContent = content;
-            
-            div.appendChild(bubble);
-            messagesDiv.appendChild(div);
-            
-            scrollToBottom();
-        }
-        
-        function addImage(imageUrl) {
-            const div = document.createElement('div');
-            div.className = 'message miso';
-            
-            const bubble = document.createElement('div');
-            bubble.className = 'bubble';
-            
-            const attachment = document.createElement('div');
-            attachment.className = 'image-attachment';
-            
-            const img = document.createElement('img');
-            // Handle relative URLs
-            if (!imageUrl.startsWith('http') && !imageUrl.startsWith('data:')) {
-                imageUrl = `${window.location.origin}${imageUrl}`;
-            }
-            img.src = imageUrl;
-            img.loading = 'lazy';
-            img.onload = () => scrollToBottom();
-            
-            attachment.appendChild(img);
-            bubble.appendChild(attachment);
-            div.appendChild(bubble);
-            messagesDiv.appendChild(div);
-            
-            scrollToBottom();
-        }
-        
-        function scrollToBottom() {
-            setTimeout(() => {
-                messagesDiv.scrollTop = messagesDiv.scrollHeight;
-            }, 100);
-        }
-        
+
         function sendMessage(text = null) {
-            const messageText = text || messageInput.value.trim();
-            if (!messageText || !currentSessionKey) return;
-            
+            const messageText = (text || messageInput.value || '').trim();
+            if (!messageText) return;
+            if (!currentSessionKey) {
+                addMessage('system', 'Select a session first.');
+                return;
+            }
+
             addMessage('user', messageText);
             messageInput.value = '';
             messageInput.focus();
-            
-            // Send via API
-            typingIndicator.classList.add('active');
-            
-            fetch(`/api/sessions/${currentSessionKey}/send`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: messageText })
-            })
-            .then(res => res.json())
-            .then(data => {
-                typingIndicator.classList.remove('active');
-                if (data.response) {
-                    // Extract content from response
-                    const content = data.response.content || data.response.text || data.response.message || JSON.stringify(data.response);
-                    addMessage('miso', content);
-                }
-            })
-            .catch(err => {
-                typingIndicator.classList.remove('active');
-                console.error('Error sending message:', err);
-            });
+            sendQueue.push(messageText);
+            processQueue();
         }
-        
-        function quickAction(action) {
-            const messages = {
-                'generate': '🎲 Generate a random image',
-                'casual': '👕 Show me something casual',
-                'elegant': '👗 Show me something elegant',
-                'cute': '✨ Show me something cute'
-            };
-            sendMessage(messages[action] || action);
+
+        async function refreshCurrentSession() {
+            if (currentSessionKey) {
+                await selectSession(currentSessionKey);
+            } else {
+                await loadSessions();
+            }
         }
-        
-        // Event listeners
+
+        async function logout() {
+            try {
+                await fetch('/logout', { method: 'POST' });
+            } finally {
+                window.location.href = '/login';
+            }
+        }
+
         messageInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
             }
         });
-        
-        // Handle visibility change - reconnect if needed
-        document.addEventListener('visibilitychange', () => {
-            if (!document.hidden && (!ws || ws.readyState !== WebSocket.OPEN)) {
-                connect();
-            }
-        });
-        
-        // Initial load
-        loadSessions();
-        
-        // Focus input on load (mobile)
-        window.addEventListener('load', () => {
-            // Don't auto-focus on mobile as it shows keyboard
-        });
+
+        refreshBtn.addEventListener('click', refreshCurrentSession);
+        logoutBtn.addEventListener('click', logout);
+
+        (async () => {
+            setOnlineState(false, 'Connecting...');
+            await loadConfig();
+            await loadSessions();
+        })();
     </script>
 </body>
 </html>
