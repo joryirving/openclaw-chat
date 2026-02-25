@@ -143,11 +143,20 @@ app.post('/login', (req, res, next) => {
 app.get('/auth/oidc', passport.authenticate('oidc'));
 app.get('/auth/oidc/callback', passport.authenticate('oidc', { successRedirect: '/', failureRedirect: '/login?error=oidc_failed' }));
 app.post('/logout', (req, res) => {
-  req.logout(() => {
-    if (process.env.OIDC_ENABLED === 'true' && process.env.OIDC_ISSUER) {
-      return res.redirect(process.env.OIDC_ISSUER + '/logout/?next=' + encodeURIComponent(req.protocol + '://' + req.get('host') + '/login'));
+  req.logout((logoutErr) => {
+    if (logoutErr) {
+      console.error('Logout error:', logoutErr.message || logoutErr);
     }
-    res.redirect('/login');
+
+    req.session?.destroy(() => {
+      res.clearCookie('connect.sid');
+      if (process.env.OIDC_ENABLED === 'true' && process.env.OIDC_ISSUER) {
+        return res.redirect(
+          process.env.OIDC_ISSUER + '/logout/?next=' + encodeURIComponent(req.protocol + '://' + req.get('host') + '/login')
+        );
+      }
+      return res.redirect('/login');
+    });
   });
 });
 
@@ -155,6 +164,18 @@ app.post('/logout', (req, res) => {
 app.get('/', isAuthenticated, (req, res) => res.sendFile(__dirname + '/public/index.html'));
 app.get('/api/auth', (req, res) => res.json({ authenticated: req.isAuthenticated(), user: req.user, oidc: process.env.OIDC_ENABLED === 'true' }));
 app.get('/api/health', (req, res) => res.json({ status: 'healthy', uptime: process.uptime(), timestamp: new Date().toISOString() }));
+
+const CHAT_DISPLAY_NAME = process.env.CHAT_DISPLAY_NAME || process.env.ASSISTANT_NAME || 'Miso';
+const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
+const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || 'agent:main:main';
+
+app.get('/api/config', isAuthenticated, (req, res) => {
+  res.json({
+    title: APP_TITLE,
+    assistantName: CHAT_DISPLAY_NAME,
+    defaultSessionKey: DEFAULT_SESSION_KEY,
+  });
+});
 
 // ============ GATEWAY HTTP API ============
 
@@ -214,6 +235,24 @@ function unwrapToolResult(result) {
   return result;
 }
 
+function extractReplyText(reply) {
+  if (!reply) return '';
+  if (typeof reply === 'string') return reply;
+  if (Array.isArray(reply)) {
+    return reply.map((x) => extractReplyText(x)).filter(Boolean).join('\n');
+  }
+  if (typeof reply.text === 'string') return reply.text;
+  if (typeof reply.message === 'string') return reply.message;
+  if (typeof reply.content === 'string') return reply.content;
+  if (Array.isArray(reply.content)) {
+    return reply.content
+      .map((p) => (typeof p === 'string' ? p : p?.text || p?.content || ''))
+      .filter(Boolean)
+      .join('\n');
+  }
+  return '';
+}
+
 // GET /api/sessions - List all sessions via gateway
 app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
@@ -232,7 +271,16 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       lastMessage: s.lastMessage,
       title: s.derivedTitle || s.title,
     }));
-    res.json({ sessions });
+
+    const deduped = [];
+    const seen = new Set();
+    for (const s of sessions) {
+      if (!s?.sessionKey || seen.has(s.sessionKey)) continue;
+      seen.add(s.sessionKey);
+      deduped.push(s);
+    }
+
+    res.json({ sessions: deduped, defaultSessionKey: DEFAULT_SESSION_KEY });
   } catch (error) {
     console.error('Error listing sessions:', error.message);
     res.json({ sessions: [], error: error.message });
@@ -269,23 +317,32 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
 // POST /api/sessions/:sessionKey/send - Send message via gateway
 app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => {
   try {
-    const { sessionKey } = req.params;
+    const requestedSessionKey = req.params.sessionKey;
+    const sessionKey = requestedSessionKey && requestedSessionKey !== 'default'
+      ? requestedSessionKey
+      : DEFAULT_SESSION_KEY;
     const { message } = req.body;
-    
+
     if (!message) {
       return res.status(400).json({ error: 'Message is required' });
     }
 
     console.log(`Sending to ${sessionKey}:`, message);
-    
+
     // Use sessions_send via gateway tools API (requires gateway.tools.allow override)
     const result = await gatewayInvoke('sessions_send', {
       sessionKey,
       message,
+      timeoutSeconds: Number(process.env.SEND_TIMEOUT_SECONDS || 180),
     });
 
     const payload = unwrapToolResult(result);
-    res.json({ success: true, response: payload });
+    const responseText = extractReplyText(payload?.reply || payload?.response || payload?.details?.reply);
+    const filteredResponseText = ['ANNOUNCE_SKIP', 'Agent-to-agent announce step.'].includes(responseText?.trim())
+      ? ''
+      : responseText;
+
+    res.json({ success: true, response: payload, responseText: filteredResponseText });
   } catch (error) {
     console.error('Error sending:', error.message);
     const msg = String(error.message || 'send failed');
@@ -302,9 +359,10 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`
-🎉 Miso-Chat Server v0.1.9-hotfix running on port ${PORT}
+🎉 ${APP_TITLE} server running on port ${PORT}
    
    Gateway: ${GATEWAY_URL}
+   Default Session: ${DEFAULT_SESSION_KEY}
    Auth: ${process.env.OIDC_ENABLED === 'true' ? 'OIDC' : 'Local'}
    Node Env: ${process.env.NODE_ENV || 'development'}
    
