@@ -48,6 +48,7 @@ docker run -d --name miso-chat \
 | `SESSION_SECRET` | Yes | - | Secret for sessions |
 | `OIDC_ENABLED` | No | `false` | Enable OIDC auth |
 | `LOCAL_USERS` | If local | `admin:password123` | Users (user:pass) |
+| `REDIS_URL` | No | - | Optional Redis/Dragonfly session store |
 
 ## Security
 
@@ -74,3 +75,24 @@ npm run lint   # Lint
 ## License
 
 MIT License - see [LICENSE](LICENSE).
+
+
+## Notes
+
+- When running behind Envoy/Ingress over HTTPS, this app trusts one proxy hop for secure session cookies.
+- WebSocket upgrades require an authenticated session (unauthenticated upgrades are rejected with 401).
+- With OIDC enabled, `/login` redirects directly to `/auth/oidc`.
+
+- Startup validation fails fast when OIDC is enabled but required env vars are missing.
+
+
+### Home-ops tip (Dragonfly)
+
+If you enable the `dragonfly` component in home-ops, set:
+
+```yaml
+env:
+  REDIS_URL: "redis://{{ .Release.Name }}-dragonfly:6379"
+```
+
+This is optional. If `REDIS_URL` is not set, miso-chat falls back to in-memory sessions.

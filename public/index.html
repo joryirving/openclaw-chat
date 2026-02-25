@@ -1,167 +1,1438 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#0d0d14">
-  <link rel="manifest" href="/manifest.json">
-  <title>OpenClaw Chat</title>
-  <style>
-    :root { --bg-primary: #0d0d14; --bg-secondary: #161625; --bg-tertiary: #1e1e32; --accent: #e94560; --accent-gradient: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%); --text-primary: #ffffff; --text-secondary: #a0a0b8; --border: #2a2a40; --safe-area-top: env(safe-area-inset-top, 20px); --safe-area-bottom: env(safe-area-inset-bottom, 20px); }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body { height: 100%; overflow: hidden; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', sans-serif; background: var(--bg-primary); color: var(--text-primary); display: flex; flex-direction: column; }
-    .header { background: var(--bg-secondary); padding: calc(var(--safe-area-top) + 12px) 16px 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); }
-    .header h1 { font-size: 18px; }
-    .logout { background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-secondary); padding: 8px 16px; border-radius: 8px; cursor: pointer; }
-    .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-    .message { max-width: 80%; padding: 12px 16px; border-radius: 16px; word-wrap: break-word; }
-    .message.miso { background: var(--bg-tertiary); align-self: flex-start; border-bottom-left-radius: 4px; }
-    .message.user { background: var(--accent-gradient); align-self: flex-end; border-bottom-right-radius: 4px; }
-    .message.error { background: #ff4757; color: white; }
-    .message a { color: #6b9fff; text-decoration: underline; }
-    .message img { max-width: 100%; border-radius: 12px; margin-top: 8px; display: block; }
-    .message .link-preview { background: var(--bg-secondary); border-radius: 12px; padding: 12px; margin-top: 8px; }
-    .message .link-preview img { margin-top: 8px; border-radius: 8px; }
-    .message .link-preview .link-title { font-weight: bold; margin-bottom: 4px; }
-    .message .link-preview .link-desc { font-size: 12px; color: var(--text-secondary); }
-    .message .link-preview .link-url { font-size: 10px; color: var(--text-secondary); opacity: 0.7; }
-    .message .time { font-size: 10px; opacity: 0.6; margin-top: 4px; }
-    .typing { display: flex; gap: 4px; padding: 8px 16px; }
-    .typing span { width: 8px; height: 8px; background: var(--text-secondary); border-radius: 50%; animation: typing 1.4s infinite; }
-    .typing span:nth-child(2) { animation-delay: 0.2s; }
-    .typing span:nth-child(3) { animation-delay: 0.4s; }
-    @keyframes typing { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
-    .quick-actions { display: flex; gap: 8px; padding: 12px 16px; overflow-x: auto; background: var(--bg-secondary); }
-    .quick-btn { flex-shrink: 0; padding: 10px 16px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 20px; color: var(--text-primary); font-size: 14px; white-space: nowrap; }
-    .input-area { background: var(--bg-secondary); padding: calc(var(--safe-area-bottom) + 12px) 16px 16px; display: flex; gap: 12px; }
-    .input-wrapper { flex: 1; }
-    input { width: 100%; padding: 14px 18px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 24px; color: var(--text-primary); font-size: 16px; }
-    input:focus { outline: none; border-color: var(--accent); }
-    input:disabled { opacity: 0.5; cursor: not-allowed; }
-    .send-btn { width: 48px; height: 48px; border-radius: 50%; border: none; background: var(--accent-gradient); color: white; font-size: 18px; cursor: pointer; }
-    .send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-secondary); }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff4757; }
-    .status-dot.connected { background: #2ed573; }
-    .status-dot.connecting { background: #ffa502; animation: pulse 1s infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-    .offline-banner { background: #ffa502; color: #000; padding: 8px; text-align: center; font-size: 12px; display: none; }
-    .offline-banner.show { display: block; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="format-detection" content="telephone=no">
+    
+    <title>Miso Chat</title>
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/manifest.json">
+    
+    <style>
+        :root {
+            --bg-primary: #0d0d14;
+            --bg-secondary: #161625;
+            --bg-tertiary: #1e1e32;
+            --accent: #e94560;
+            --accent-gradient: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0b8;
+            --border: #2a2a40;
+            --shadow: 0 4px 24px rgba(0,0,0,0.4);
+            --safe-area-top: env(safe-area-inset-top, 20px);
+            --safe-area-bottom: env(safe-area-inset-bottom, 20px);
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            display: flex;
+            flex-direction: column;
+            overscroll-behavior: none;
+        }
+        
+        /* Header */
+        .header {
+            background: var(--bg-secondary);
+            padding: calc(var(--safe-area-top) + 12px) 20px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+        }
+        
+        .avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: var(--accent-gradient);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            box-shadow: 0 2px 12px rgba(233, 69, 96, 0.4);
+        }
+        
+        .header-info h1 {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+        
+        .header-info .status {
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ff4757;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.connected {
+            background: #2ed573;
+            animation: none;
+        }
+        
+        .session-select {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 12px;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-controls {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .icon-btn {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 10px;
+            font-size: 14px;
+            cursor: pointer;
+            line-height: 1;
+        }
+
+        .icon-btn:active {
+            transform: scale(0.96);
+        }
+
+        .icon-btn.active {
+            border-color: rgba(233, 69, 96, 0.75);
+            box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.3);
+            background: rgba(233, 69, 96, 0.15);
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        /* Messages */
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding: 20px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            -webkit-overflow-scrolling: touch;
+            scroll-behavior: smooth;
+        }
+        
+        .message {
+            max-width: 90%;
+            display: flex;
+            align-items: flex-end;
+            gap: 8px;
+            animation: slideIn 0.3s ease;
+        }
+        
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.miso {
+            align-self: flex-start;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            justify-content: flex-end;
+        }
+
+        .message-avatar {
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 1px solid var(--border);
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+            flex-shrink: 0;
+            margin-bottom: 2px;
+        }
+
+        .message.user .message-avatar,
+        .message.system .message-avatar {
+            display: none;
+        }
+
+        .message-content {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .bubble {
+            padding: 14px 18px;
+            border-radius: 20px;
+            font-size: 16px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+            position: relative;
+        }
+        
+        .message.miso .bubble {
+            background: var(--bg-tertiary);
+            border-bottom-left-radius: 6px;
+            color: var(--text-primary);
+        }
+        
+        .message.user .bubble {
+            background: var(--accent-gradient);
+            border-bottom-right-radius: 6px;
+            color: white;
+            font-weight: 500;
+        }
+
+        .message.user .message-content {
+            align-items: flex-end;
+        }
+        
+        .message .image-attachment {
+            margin-top: 10px;
+            border-radius: 16px;
+            overflow: hidden;
+            background: var(--bg-tertiary);
+        }
+        
+        .message .image-attachment img {
+            display: block;
+            max-width: 100%;
+            width: 100%;
+            height: auto;
+        }
+        
+        .message.system {
+            align-self: center;
+            justify-content: center;
+            max-width: 90%;
+            gap: 0;
+        }
+        
+        .message.system .bubble {
+            background: var(--bg-tertiary);
+            color: var(--text-secondary);
+            font-size: 13px;
+            text-align: center;
+            border-radius: 12px;
+            padding: 10px 16px;
+        }
+
+        .reaction-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .reaction-btn {
+            border: 1px solid var(--border);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            border-radius: 999px;
+            font-size: 12px;
+            line-height: 1;
+            padding: 4px 8px;
+            cursor: pointer;
+            opacity: 0.85;
+        }
+
+        .reaction-btn.active {
+            border-color: rgba(233, 69, 96, 0.8);
+            box-shadow: 0 0 0 1px rgba(233, 69, 96, 0.25);
+            opacity: 1;
+        }
+
+        .code-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 1px 6px;
+            margin: 0 1px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.92em;
+            line-height: 1.4;
+        }
+
+        .code-block {
+            margin-top: 8px;
+            border: 1px solid var(--border);
+            border-left: 3px solid #7f8cff;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #111320;
+        }
+
+        .code-block-head {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 6px 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: var(--text-secondary);
+        }
+
+        .code-block-body {
+            margin: 0;
+            padding: 10px 12px;
+            overflow-x: auto;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.45;
+            color: #e9edff;
+            white-space: pre;
+        }
+
+        .code-block-body .tok-comment { color: #7f88a8; }
+        .code-block-body .tok-keyword { color: #ff8f70; }
+        .code-block-body .tok-string { color: #9fe870; }
+        .code-block-body .tok-number { color: #ffd166; }
+        .code-block-body .tok-boolean { color: #c792ea; }
+        .code-block-body .tok-operator { color: #7aa2ff; }
+        .code-block-body .tok-punctuation { color: #8da2c9; }
+        .code-block-body .tok-property { color: #7bdff2; }
+        .code-block-body .tok-command { color: #f7b267; }
+
+        .copy-code-btn {
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-primary);
+            border-radius: 999px;
+            padding: 2px 7px;
+            font-size: 11px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .copy-code-btn:hover {
+            border-color: rgba(255, 255, 255, 0.38);
+            background: rgba(255, 255, 255, 0.14);
+        }
+
+        .copy-code-btn.copied {
+            border-color: rgba(70, 214, 140, 0.7);
+            background: rgba(70, 214, 140, 0.16);
+            color: #9cf0c4;
+        }
+
+        .code-block[data-lang="js"],
+        .code-block[data-lang="javascript"],
+        .code-block[data-lang="ts"],
+        .code-block[data-lang="typescript"] {
+            border-left-color: #7f8cff;
+        }
+
+        .code-block[data-lang="json"],
+        .code-block[data-lang="yaml"],
+        .code-block[data-lang="yml"] {
+            border-left-color: #37c8ab;
+        }
+
+        .code-block[data-lang="bash"],
+        .code-block[data-lang="sh"],
+        .code-block[data-lang="shell"] {
+            border-left-color: #ffb14a;
+        }
+        
+        /* Quick Actions */
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            padding: 0 16px 12px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            scrollbar-width: none;
+        }
+        
+        .quick-actions::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .quick-btn {
+            flex-shrink: 0;
+            padding: 10px 16px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            color: var(--text-primary);
+            font-size: 14px;
+            font-weight: 500;
+            white-space: nowrap;
+            transition: all 0.2s;
+        }
+        
+        .quick-btn:active {
+            transform: scale(0.95);
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        
+        /* Input */
+        .input-area {
+            background: var(--bg-secondary);
+            padding: calc(var(--safe-area-bottom) + 12px) 16px 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 12px;
+            flex-shrink: 0;
+            -webkit-backdrop-filter: blur(20px);
+            backdrop-filter: blur(20px);
+        }
+        
+        .input-wrapper {
+            flex: 1;
+            position: relative;
+        }
+        
+        .input-wrapper textarea {
+            width: 100%;
+            min-height: 52px;
+            max-height: 180px;
+            padding: 14px 20px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 24px;
+            color: var(--text-primary);
+            font-size: 16px;
+            line-height: 1.4;
+            outline: none;
+            transition: border-color 0.2s;
+            -webkit-appearance: none;
+            resize: none;
+            overflow-y: auto;
+        }
+        
+        .input-wrapper textarea:focus {
+            border-color: var(--accent);
+        }
+        
+        .input-wrapper textarea::placeholder {
+            color: var(--text-secondary);
+        }
+        
+        .send-btn {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            border: none;
+            background: var(--accent-gradient);
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 16px rgba(233, 69, 96, 0.4);
+        }
+        
+        .send-btn:active {
+            transform: scale(0.92);
+        }
+        
+        .send-btn:disabled {
+            opacity: 0.5;
+            transform: none;
+        }
+        
+        /* Typing indicator */
+        .typing {
+            display: none;
+            padding: 0 16px 12px;
+        }
+        
+        .typing.active {
+            display: block;
+        }
+        
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+            padding: 12px 16px;
+            background: var(--bg-tertiary);
+            border-radius: 20px;
+            width: fit-content;
+        }
+        
+        .typing-dots span {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-secondary);
+            animation: typingBounce 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dots span:nth-child(1) { animation-delay: 0s; }
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+        
+        @keyframes typingBounce {
+            0%, 60%, 100% { transform: translateY(0); }
+            30% { transform: translateY(-6px); }
+        }
+        
+        /* Pull to refresh hint */
+        .refresh-hint {
+            text-align: center;
+            padding: 8px;
+            color: var(--text-secondary);
+            font-size: 12px;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        
+        .refresh-hint.visible {
+            opacity: 1;
+        }
+
+        @media (max-width: 420px) {
+            .message {
+                max-width: 94%;
+                gap: 6px;
+            }
+
+            .message-avatar {
+                width: 20px;
+                height: 20px;
+            }
+        }
+    </style>
 </head>
 <body>
-  <div class="offline-banner" id="offlineBanner">📡 Reconnecting...</div>
-  <header class="header">
-    <div><h1>🍲 Miso</h1><div class="status"><span class="status-dot" id="statusDot"></span><span id="statusText">Connecting...</span></div></div>
-    <form action="/logout" method="POST"><button class="logout" type="submit">Logout</button></form>
-  </header>
-  <div class="messages" id="messages"><div class="message miso">Hey there! 👋 Connected! What would you like?</div></div>
-  <div class="typing" id="typingIndicator" style="display: none;"><span></span><span></span><span></span></div>
-  <div class="quick-actions">
-    <button class="quick-btn" onclick="quickAction('generate')">🎲 Generate</button>
-    <button class="quick-btn" onclick="quickAction('casual')">👕 Casual</button>
-    <button class="quick-btn" onclick="quickAction('elegant')">👗 Elegant</button>
-    <button class="quick-btn" onclick="quickAction('cute')">✨ Cute</button>
-  </div>
-  <div class="input-area">
-    <div class="input-wrapper"><input type="text" id="messageInput" placeholder="Message Miso..." autocomplete="off"></div>
-    <button class="send-btn" id="sendBtn" onclick="sendMessage()">➤</button>
-  </div>
-  <script>
-    // Image regex patterns
-    const IMAGE_EXTENSIONS = /\.(jpg|jpeg|png|gif|webp|svg|bmp)(\?.*)?$/i;
-    const URL_REGEX = /(https?:\/\/[^\s<]+)/g;
+    <header class="header">
+        <div class="avatar">🍲</div>
+        <div class="header-info">
+            <h1 id="assistantName">Miso</h1>
+            <div class="status">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Connecting...</span>
+            </div>
+        </div>
+        <div class="header-controls">
+            <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
+            <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
+            <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
+                <option value="">Loading sessions...</option>
+            </select>
+            <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">⎋</button>
+        </div>
+    </header>
     
-    let ws = null, reconnectAttempts = 0, maxReconnectAttempts = 10, reconnectTimeout = null, messageQueue = [];
-    const messagesDiv = document.getElementById('messages'), messageInput = document.getElementById('messageInput'), sendBtn = document.getElementById('sendBtn');
-    const statusDot = document.getElementById('statusDot'), statusText = document.getElementById('statusText'), offlineBanner = document.getElementById('offlineBanner'), typingIndicator = document.getElementById('typingIndicator');
+    <div class="messages" id="messages">
+        <div class="message miso">
+            <img class="message-avatar" src="/favicon-32x32.png" alt="Miso avatar" loading="lazy" decoding="async">
+            <div class="message-content">
+                <div class="bubble">Hey there! 👋 Connected! What would you like?</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="typing" id="typingIndicator">
+        <div class="typing-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+    </div>
+    
+    
+    <div class="input-area">
+        <div class="input-wrapper">
+            <textarea id="messageInput" rows="1" placeholder="Message Miso... (Enter to send, Shift+Enter for new line)" autocomplete="off" autocorrect="off" autocapitalize="sentences"></textarea>
+        </div>
+        <button type="button" class="send-btn" id="sendBtn" onclick="sendMessage()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+        </button>
+    </div>
 
-    function connect() {
-      if (reconnectAttempts >= maxReconnectAttempts) { statusText.textContent = 'Connection failed'; addMessage('error', 'Unable to connect. Please refresh the page.'); return; }
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      statusDot.className = 'status-dot connecting'; statusText.textContent = 'Connecting...';
-      ws = new WebSocket(`${protocol}//${window.location.host}`);
-      ws.onopen = () => { statusDot.className = 'status-dot connected'; statusText.textContent = 'Online'; offlineBanner.classList.remove('show'); reconnectAttempts = 0; sendQueuedMessages(); };
-      ws.onclose = () => { statusDot.className = 'status-dot'; statusText.textContent = 'Disconnected'; scheduleReconnect(); };
-      ws.onerror = (err) => console.error('WebSocket error:', err);
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data.type === 'typing') { showTyping(data.show); }
-          else if (data.content || data.text) { addMessage('miso', data.content || data.text); hideTyping(); }
-          if (data.images) { data.images.forEach(img => addImage(img)); }
-        } catch { addMessage('miso', event.data); }
-      };
-    }
+    <script>
+        const SESSION_STORAGE_KEY = 'miso.selectedSessionKey';
+        const QUEUE_STORAGE_KEY = 'miso.pendingQueue';
+        const REACTION_STORAGE_KEY = 'miso.messageReactions.v1';
+        const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
+        const REACTION_OPTIONS = ['❤️', '👍', '😂', '👀'];
+        const HISTORY_POLL_INTERVAL_MS = 5000;
 
-    function scheduleReconnect() {
-      reconnectAttempts++;
-      const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-      statusText.textContent = `Reconnecting in ${delay/1000}s...`; offlineBanner.classList.add('show');
-      messageInput.disabled = true; sendBtn.disabled = true;
-      reconnectTimeout = setTimeout(connect, delay);
-    }
+        let currentSessionKey = null;
+        let defaultSessionKey = 'agent:main:main';
+        let sendQueue = loadPendingQueue();
+        let sending = false;
+        let historyPollTimer = null;
+        let historyPollInFlight = false;
+        let historyMessageKeys = new Set();
+        let localAssistantEchoes = new Map();
 
-    function sendQueuedMessages() { while (messageQueue.length > 0 && ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify(messageQueue.shift())); } }
+        const CODE_BLOCK_REGEX = /```([\w+-]+)?\n([\s\S]*?)```/g;
+        const INLINE_CODE_REGEX = /`([^`\n]+)`/g;
 
-    function sendMessage(text = null) {
-      const msg = text || messageInput.value.trim();
-      if (!msg) return;
-      messageInput.disabled = true; sendBtn.disabled = true; messageInput.value = ''; addMessage('user', msg);
-      if (ws?.readyState === WebSocket.OPEN) { ws.send(JSON.stringify({ type: 'message', content: msg })); messageInput.disabled = false; sendBtn.disabled = false; messageInput.focus(); }
-      else { messageQueue.push({ type: 'message', content: msg }); addMessage('error', 'Message queued (offline)'); setTimeout(() => { messageInput.disabled = false; sendBtn.disabled = false; }, 1000); }
-    }
-
-    function showTyping(show) { typingIndicator.style.display = show ? 'flex' : 'none'; if (show) messagesDiv.scrollTop = messagesDiv.scrollHeight; }
-    function hideTyping() { typingIndicator.style.display = 'none'; }
-
-    function addMessage(sender, content) {
-      const div = document.createElement('div'); div.className = 'message ' + sender;
-      // Parse content for URLs and images
-      const processed = processContent(content);
-      div.innerHTML = processed;
-      const time = document.createElement('div'); time.className = 'time'; time.textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      div.appendChild(time); messagesDiv.appendChild(div); messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    }
-
-    function processContent(text) {
-      // First escape HTML
-      let escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-      
-      // Find URLs and process them
-      return escaped.replace(URL_REGEX, (url) => {
-        const cleanUrl = url.replace(/[)>]+$/, ''); // Remove trailing characters
-        const isImage = IMAGE_EXTENSIONS.test(cleanUrl);
-        
-        if (isImage) {
-          return `<img src="${cleanUrl}" alt="Image" loading="lazy" onerror="this.style.display='none'">`;
-        } else {
-          // Link with preview - truncated display
-          const displayUrl = cleanUrl.length > 50 ? cleanUrl.substring(0, 47) + '...' : cleanUrl;
-          return `<a href="${cleanUrl}" target="_blank" rel="noopener noreferrer">${displayUrl}</a>`;
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
         }
-      });
-    }
 
-    function addImage(url) {
-      const div = document.createElement('div'); div.className = 'message miso';
-      const img = document.createElement('img'); img.src = url; img.loading = 'lazy';
-      img.onload = () => messagesDiv.scrollTop = messagesDiv.scrollHeight;
-      img.onerror = () => { div.innerHTML = '<a href="' + url + '" target="_blank">View Image</a>'; };
-      div.appendChild(img); messagesDiv.appendChild(div);
-    }
+        function normalizedLang(lang) {
+            const value = String(lang || '').trim().toLowerCase();
+            if (['js', 'jsx', 'mjs', 'cjs'].includes(value)) return 'javascript';
+            if (['ts', 'tsx'].includes(value)) return 'typescript';
+            if (['sh', 'zsh'].includes(value)) return 'bash';
+            if (value === 'yml') return 'yaml';
+            return value;
+        }
 
-    function quickAction(action) {
-      const messages = { 'generate': '🎲 Generate a random image', 'casual': '👕 Show me something casual', 'elegant': '👗 Show me something elegant', 'cute': '✨ Show me something cute' };
-      sendMessage(messages[action] || action);
-    }
+        function protectTokenMatches(source, patterns) {
+            let out = source;
+            const tokens = [];
 
-    messageInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') sendMessage(); });
-    window.addEventListener('online', () => { if (!ws || ws.readyState !== WebSocket.OPEN) { reconnectAttempts = 0; connect(); } });
-    window.addEventListener('offline', () => { statusText.textContent = 'Offline'; offlineBanner.classList.add('show'); });
-    connect();
-  </script>
+            patterns.forEach(({ regex, className }) => {
+                out = out.replace(regex, (match) => {
+                    const index = tokens.push(`<span class="${className}">${match}</span>`) - 1;
+                    return `__TOK_${index}__`;
+                });
+            });
+
+            return { out, tokens };
+        }
+
+        function restoreTokenMatches(source, tokens) {
+            return source.replace(/__TOK_(\d+)__/g, (_, rawIndex) => {
+                const index = Number(rawIndex);
+                return Number.isInteger(index) && tokens[index] ? tokens[index] : '';
+            });
+        }
+
+        function highlightCode(rawCode, lang) {
+            const source = escapeHtml(rawCode);
+            const grammar = normalizedLang(lang);
+
+            if (['javascript', 'typescript'].includes(grammar)) {
+                const { out: base, tokens } = protectTokenMatches(source, [
+                    { regex: /(\/\/[^\n]*)/g, className: 'tok-comment' },
+                    { regex: /(`(?:[^`\\]|\\.)*`|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, className: 'tok-string' },
+                ]);
+
+                let out = base;
+                out = out.replace(/\b(const|let|var|function|return|if|else|for|while|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|from|export|default|async|await|typeof|instanceof)\b/g, '<span class="tok-keyword">$1</span>');
+                out = out.replace(/\b(true|false|null|undefined)\b/g, '<span class="tok-boolean">$1</span>');
+                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+                out = out.replace(/([{}()[\].,;:])/g, '<span class="tok-punctuation">$1</span>');
+                out = out.replace(/([+\-*\/%=&|!<>]+)/g, '<span class="tok-operator">$1</span>');
+
+                return restoreTokenMatches(out, tokens);
+            }
+
+            if (grammar === 'json') {
+                let out = source;
+                out = out.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"(?=\s*:)/g, '<span class="tok-property">"$1"</span>');
+                out = out.replace(/:\s*("(?:[^"\\]|\\.)*")/g, ': <span class="tok-string">$1</span>');
+                out = out.replace(/\b(true|false|null)\b/g, '<span class="tok-boolean">$1</span>');
+                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+                out = out.replace(/([{}[\],])/g, '<span class="tok-punctuation">$1</span>');
+                return out;
+            }
+
+            if (grammar === 'yaml') {
+                let out = source;
+                out = out.replace(/(^|\n)(\s*#.*)/g, '$1<span class="tok-comment">$2</span>');
+                out = out.replace(/(^|\n)(\s*[\w.-]+)(\s*:)/g, '$1<span class="tok-property">$2</span>$3');
+                out = out.replace(/:\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, ': <span class="tok-string">$1</span>');
+                out = out.replace(/\b(true|false|null|yes|no|on|off)\b/gi, '<span class="tok-boolean">$1</span>');
+                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+                return out;
+            }
+
+            if (grammar === 'bash' || grammar === 'shell') {
+                let out = source;
+                out = out.replace(/(^|\n)(\s*#.*)/g, '$1<span class="tok-comment">$2</span>');
+                out = out.replace(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g, '<span class="tok-string">$1</span>');
+                out = out.replace(/(^|\n)(\s*)([a-zA-Z_][\w.-]*)/g, '$1$2<span class="tok-command">$3</span>');
+                out = out.replace(/\b(\d+(?:\.\d+)?)\b/g, '<span class="tok-number">$1</span>');
+                return out;
+            }
+
+            return source;
+        }
+
+        function encodeCopyPayload(value) {
+            return btoa(unescape(encodeURIComponent(String(value || ''))));
+        }
+
+        function decodeCopyPayload(payload) {
+            try {
+                return decodeURIComponent(escape(atob(payload || '')));
+            } catch {
+                return '';
+            }
+        }
+
+        async function copyCodeFromButton(button) {
+            const payload = button?.dataset?.copyPayload;
+            if (!payload) return;
+            const text = decodeCopyPayload(payload);
+            if (!text) return;
+
+            try {
+                if (navigator.clipboard?.writeText) {
+                    await navigator.clipboard.writeText(text);
+                } else {
+                    const input = document.createElement('textarea');
+                    input.value = text;
+                    input.setAttribute('readonly', '');
+                    input.style.position = 'fixed';
+                    input.style.opacity = '0';
+                    document.body.appendChild(input);
+                    input.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(input);
+                }
+                const original = button.textContent;
+                button.textContent = 'Copied';
+                button.classList.add('copied');
+                setTimeout(() => {
+                    button.textContent = original;
+                    button.classList.remove('copied');
+                }, 1200);
+            } catch (error) {
+                console.warn('Copy failed:', error);
+            }
+        }
+
+        function appendTextWithInlineCode(container, source) {
+            const text = String(source || '');
+            let cursor = 0;
+            let match;
+            while ((match = INLINE_CODE_REGEX.exec(text)) !== null) {
+                const plain = text.slice(cursor, match.index);
+                if (plain) container.appendChild(document.createTextNode(plain));
+
+                const rawCode = match[1];
+                const inline = document.createElement('span');
+                inline.className = 'code-inline';
+
+                const codeNode = document.createElement('code');
+                codeNode.textContent = rawCode;
+                inline.appendChild(codeNode);
+
+                const copyBtn = document.createElement('button');
+                copyBtn.type = 'button';
+                copyBtn.className = 'copy-code-btn';
+                copyBtn.textContent = 'Copy';
+                copyBtn.dataset.copyPayload = encodeCopyPayload(rawCode);
+                copyBtn.setAttribute('aria-label', 'Copy inline code');
+                inline.appendChild(copyBtn);
+
+                container.appendChild(inline);
+                cursor = match.index + match[0].length;
+            }
+
+            const tail = text.slice(cursor);
+            if (tail) container.appendChild(document.createTextNode(tail));
+            INLINE_CODE_REGEX.lastIndex = 0;
+        }
+
+        function appendFencedCode(container, language, rawCode) {
+            const block = document.createElement('div');
+            block.className = 'code-block';
+
+            const lang = normalizedLang(language);
+            if (lang) block.dataset.lang = lang;
+
+            const header = document.createElement('div');
+            header.className = 'code-block-head';
+
+            const label = document.createElement('span');
+            label.textContent = lang || 'code';
+            header.appendChild(label);
+
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'copy-code-btn';
+            copyBtn.textContent = 'Copy';
+            copyBtn.dataset.copyPayload = encodeCopyPayload(rawCode);
+            copyBtn.setAttribute('aria-label', `Copy ${lang || 'code'} block`);
+            header.appendChild(copyBtn);
+
+            block.appendChild(header);
+
+            const pre = document.createElement('pre');
+            pre.className = 'code-block-body';
+            const code = document.createElement('code');
+            code.innerHTML = highlightCode(rawCode, lang);
+            pre.appendChild(code);
+            block.appendChild(pre);
+            container.appendChild(block);
+        }
+
+        function renderBubbleContent(bubble, text) {
+            bubble.textContent = '';
+            const value = String(text || '');
+
+            let cursor = 0;
+            let match;
+            while ((match = CODE_BLOCK_REGEX.exec(value)) !== null) {
+                const before = value.slice(cursor, match.index);
+                if (before) appendTextWithInlineCode(bubble, before);
+                appendFencedCode(bubble, match[1] || '', match[2] || '');
+                cursor = match.index + match[0].length;
+            }
+
+            const tail = value.slice(cursor);
+            if (tail) appendTextWithInlineCode(bubble, tail);
+            CODE_BLOCK_REGEX.lastIndex = 0;
+        }
+
+        function queueId() {
+            return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        }
+
+        function normalizeQueueItem(item) {
+            if (typeof item === 'string') {
+                return {
+                    id: queueId(),
+                    sessionKey: null,
+                    message: item,
+                    createdAt: Date.now(),
+                };
+            }
+            if (!item || typeof item !== 'object') return null;
+            const message = String(item.message || '').trim();
+            if (!message) return null;
+            return {
+                id: item.id || queueId(),
+                sessionKey: item.sessionKey || null,
+                message,
+                createdAt: Number(item.createdAt || Date.now()),
+            };
+        }
+
+        function loadPendingQueue() {
+            try {
+                const stored = localStorage.getItem(QUEUE_STORAGE_KEY);
+                const parsed = stored ? JSON.parse(stored) : [];
+                if (!Array.isArray(parsed)) return [];
+                return parsed.map(normalizeQueueItem).filter(Boolean);
+            } catch { return []; }
+        }
+
+        function savePendingQueue(queue) {
+            try {
+                localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue));
+            } catch { /* ignore storage errors */ }
+        }
+
+        function queueCountForSession(sessionKey) {
+            if (!sessionKey) return sendQueue.length;
+            return sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey).length;
+        }
+
+        function loadReactions() {
+            try {
+                const stored = localStorage.getItem(REACTION_STORAGE_KEY);
+                const parsed = stored ? JSON.parse(stored) : {};
+                return parsed && typeof parsed === 'object' ? parsed : {};
+            } catch {
+                return {};
+            }
+        }
+
+        function saveReactions(reactions) {
+            try {
+                localStorage.setItem(REACTION_STORAGE_KEY, JSON.stringify(reactions));
+            } catch { /* ignore storage errors */ }
+        }
+
+        function reactionKey(sender, content, keyHint = '') {
+            const session = currentSessionKey || 'global';
+            const signature = keyHint || `${sender}:${String(content || '').slice(0, 120)}`;
+            return `${session}::${signature}`;
+        }
+
+        let messageReactions = loadReactions();
+        let unreadNotifications = 0;
+        let soundEnabled = localStorage.getItem(NOTIFY_SOUND_KEY) === '1';
+        let baseTitle = document.title;
+
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const statusDot = document.getElementById('statusDot');
+        const statusText = document.getElementById('statusText');
+        const typingIndicator = document.getElementById('typingIndicator');
+        const sessionSelect = document.getElementById('sessionSelect');
+        const assistantNameEl = document.getElementById('assistantName');
+        const refreshBtn = document.getElementById('refreshBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const soundToggleBtn = document.getElementById('soundToggleBtn');
+
+        function updateSoundToggle() {
+            soundToggleBtn.textContent = soundEnabled ? '🔔' : '🔕';
+            soundToggleBtn.classList.toggle('active', soundEnabled);
+            soundToggleBtn.setAttribute('aria-pressed', soundEnabled ? 'true' : 'false');
+            soundToggleBtn.title = soundEnabled ? 'Reply sound on' : 'Reply sound off';
+        }
+
+        function updateDocumentTitle() {
+            document.title = unreadNotifications > 0
+                ? `(${unreadNotifications}) ${baseTitle}`
+                : baseTitle;
+        }
+
+        function clearUnreadNotifications() {
+            unreadNotifications = 0;
+            updateDocumentTitle();
+        }
+
+        function playNotificationTone() {
+            if (!soundEnabled) return;
+            try {
+                const AudioCtx = window.AudioContext || window.webkitAudioContext;
+                if (!AudioCtx) return;
+                const context = new AudioCtx();
+                const oscillator = context.createOscillator();
+                const gain = context.createGain();
+
+                oscillator.type = 'sine';
+                oscillator.frequency.value = 880;
+                gain.gain.value = 0.0001;
+
+                oscillator.connect(gain);
+                gain.connect(context.destination);
+
+                const now = context.currentTime;
+                gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+                gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+
+                oscillator.start(now);
+                oscillator.stop(now + 0.18);
+                oscillator.onended = () => context.close();
+            } catch (error) {
+                console.warn('Notification tone failed:', error);
+            }
+        }
+
+        function notifyAssistantReply() {
+            if (!document.hidden) return;
+            unreadNotifications += 1;
+            updateDocumentTitle();
+            playNotificationTone();
+        }
+
+        function setOnlineState(online, text = null) {
+            statusDot.classList.toggle('connected', !!online);
+            statusText.textContent = text || (online ? 'Online' : 'Offline');
+            messageInput.disabled = !online;
+            sendBtn.disabled = !online;
+        }
+
+        function buildSessionLabel(session) {
+            const key = session.sessionKey || '';
+            const shortKey = key.slice(0, 8);
+            const title = session.title || session.displayName || session.channel || session.kind || 'session';
+            return `${title} · ${shortKey}`;
+        }
+
+        function resolvePreferredSession(sessions) {
+            const list = Array.isArray(sessions) ? sessions.filter((s) => s?.sessionKey) : [];
+            if (list.length === 0) return { selected: null, notice: '' };
+
+            const keys = new Set(list.map((s) => s.sessionKey));
+            const stored = localStorage.getItem(SESSION_STORAGE_KEY);
+            const candidates = [currentSessionKey, stored, defaultSessionKey, list[0].sessionKey].filter(Boolean);
+            const preferredKey = candidates.find((key) => keys.has(key)) || list[0].sessionKey;
+            const selected = list.find((s) => s.sessionKey === preferredKey) || list[0];
+
+            let notice = '';
+            if (currentSessionKey && !keys.has(currentSessionKey)) {
+                notice = 'Previous session is unavailable, switched to an active session.';
+            } else if (stored && !keys.has(stored)) {
+                localStorage.removeItem(SESSION_STORAGE_KEY);
+                notice = 'Saved session is unavailable, switched to an active session.';
+            }
+
+            return { selected, notice };
+        }
+
+        function historyMessageKey(message, index) {
+            const role = message?.role === 'user' ? 'user' : 'assistant';
+            const timestamp = message?.timestamp || `idx:${index}`;
+            const content = String(message?.content || '');
+            return `${timestamp}|${role}|${content}`;
+        }
+
+        function queueStatusText(sessionKey) {
+            const queued = queueCountForSession(sessionKey);
+            return queued > 0 ? `Online · queue ${queued}` : 'Online';
+        }
+
+        function rememberLocalAssistantEcho(content) {
+            const key = String(content || '').trim();
+            if (!key) return;
+            const now = Date.now();
+            const prev = localAssistantEchoes.get(key);
+            localAssistantEchoes.set(key, {
+                count: (prev?.count || 0) + 1,
+                expiresAt: now + 30000,
+            });
+        }
+
+        function consumeLocalAssistantEcho(content) {
+            const key = String(content || '').trim();
+            if (!key) return false;
+            const now = Date.now();
+            const entry = localAssistantEchoes.get(key);
+            if (!entry || entry.expiresAt < now || entry.count <= 0) {
+                localAssistantEchoes.delete(key);
+                return false;
+            }
+
+            if (entry.count <= 1) {
+                localAssistantEchoes.delete(key);
+            } else {
+                localAssistantEchoes.set(key, {
+                    count: entry.count - 1,
+                    expiresAt: entry.expiresAt,
+                });
+            }
+            return true;
+        }
+
+        async function fetchHistoryMessages(sessionKey) {
+            const response = await fetch(`/api/sessions/${encodeURIComponent(sessionKey)}/history`);
+            const data = await response.json();
+            return Array.isArray(data?.messages) ? data.messages : [];
+        }
+
+        function stopHistoryPolling() {
+            if (historyPollTimer) {
+                clearInterval(historyPollTimer);
+                historyPollTimer = null;
+            }
+            historyPollInFlight = false;
+        }
+
+        function startHistoryPolling() {
+            stopHistoryPolling();
+            historyPollTimer = setInterval(() => {
+                pollSessionHistory();
+            }, HISTORY_POLL_INTERVAL_MS);
+        }
+
+        async function pollSessionHistory() {
+            if (!currentSessionKey || historyPollInFlight) return;
+
+            const sessionKey = currentSessionKey;
+            historyPollInFlight = true;
+
+            try {
+                const messages = await fetchHistoryMessages(sessionKey);
+                if (sessionKey !== currentSessionKey) return;
+
+                if (!Array.isArray(messages)) return;
+
+                if (messages.length < historyMessageKeys.size) {
+                    renderHistory(messages);
+                    renderPendingForSession(sessionKey);
+                    setOnlineState(true, queueStatusText(sessionKey));
+                    return;
+                }
+
+                messages.forEach((msg, index) => {
+                    const key = historyMessageKey(msg, index);
+                    if (historyMessageKeys.has(key)) return;
+
+                    historyMessageKeys.add(key);
+
+                    const sender = msg.role === 'user' ? 'user' : 'miso';
+                    if (sender === 'user') return;
+
+                    if (consumeLocalAssistantEcho(msg.content)) return;
+
+                    addMessage(sender, msg.content, {
+                        reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}`,
+                    });
+                });
+            } catch (error) {
+                console.warn('History poll error:', error);
+            } finally {
+                historyPollInFlight = false;
+            }
+        }
+
+        function addMessage(sender, content, options = {}) {
+            const div = document.createElement('div');
+            div.className = `message ${sender}`;
+
+            if (sender === 'miso') {
+                const avatar = document.createElement('img');
+                avatar.className = 'message-avatar';
+                avatar.src = '/favicon-32x32.png';
+                avatar.alt = 'Miso avatar';
+                avatar.loading = 'lazy';
+                avatar.decoding = 'async';
+                div.appendChild(avatar);
+            }
+
+            const contentWrap = document.createElement('div');
+            contentWrap.className = 'message-content';
+
+            const bubble = document.createElement('div');
+            bubble.className = 'bubble';
+            renderBubbleContent(bubble, content);
+            bubble.addEventListener('click', (event) => {
+                const btn = event.target.closest('.copy-code-btn');
+                if (!btn) return;
+                event.preventDefault();
+                event.stopPropagation();
+                copyCodeFromButton(btn);
+            });
+            contentWrap.appendChild(bubble);
+
+            const shouldShowReactions = sender !== 'system';
+            if (shouldShowReactions) {
+                const key = reactionKey(sender, content, options.reactionKeyHint || options.messageId || '');
+                const row = document.createElement('div');
+                row.className = 'reaction-row';
+
+                REACTION_OPTIONS.forEach((emoji) => {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'reaction-btn';
+                    btn.textContent = emoji;
+                    btn.setAttribute('aria-label', `React with ${emoji}`);
+                    btn.setAttribute('aria-pressed', 'false');
+
+                    const selected = messageReactions[key] === emoji;
+                    if (selected) {
+                        btn.classList.add('active');
+                        btn.setAttribute('aria-pressed', 'true');
+                    }
+
+                    btn.addEventListener('click', () => {
+                        const currentlySelected = messageReactions[key] === emoji;
+                        if (currentlySelected) {
+                            delete messageReactions[key];
+                        } else {
+                            messageReactions[key] = emoji;
+                        }
+                        saveReactions(messageReactions);
+                        row.querySelectorAll('.reaction-btn').forEach((node) => {
+                            const active = messageReactions[key] === node.textContent;
+                            node.classList.toggle('active', active);
+                            node.setAttribute('aria-pressed', active ? 'true' : 'false');
+                        });
+                    });
+
+                    row.appendChild(btn);
+                });
+
+                contentWrap.appendChild(row);
+            }
+
+            div.appendChild(contentWrap);
+            messagesDiv.appendChild(div);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+
+            if (sender === 'miso' && !options.suppressNotify) {
+                notifyAssistantReply();
+            }
+        }
+
+        function renderHistory(messages) {
+            messagesDiv.innerHTML = '';
+            historyMessageKeys = new Set();
+
+            if (!Array.isArray(messages) || messages.length === 0) {
+                addMessage('system', '📝 New session');
+                return;
+            }
+
+            messages.forEach((msg, index) => {
+                historyMessageKeys.add(historyMessageKey(msg, index));
+                addMessage(msg.role === 'user' ? 'user' : 'miso', msg.content, {
+                    reactionKeyHint: `history:${msg.timestamp || index}:${msg.role || 'assistant'}`,
+                    suppressNotify: true,
+                });
+            });
+        }
+
+        function renderPendingForSession(sessionKey) {
+            const pending = sendQueue.filter((item) => !item.sessionKey || item.sessionKey === sessionKey);
+            pending.forEach((item) => {
+                addMessage('user', `${item.message} ⏳`, { reactionKeyHint: `queued:${item.id}` });
+            });
+            if (pending.length > 0) {
+                addMessage('system', `${pending.length} queued message${pending.length > 1 ? 's' : ''} will retry.`);
+            }
+        }
+
+        async function loadConfig() {
+            try {
+                const response = await fetch('/api/config');
+                const cfg = await response.json();
+                if (cfg?.assistantName) {
+                    assistantNameEl.textContent = cfg.assistantName;
+                    messageInput.placeholder = `Message ${cfg.assistantName}...`;
+                }
+                if (cfg?.title) {
+                    baseTitle = cfg.title;
+                    updateDocumentTitle();
+                }
+                if (cfg?.defaultSessionKey) defaultSessionKey = cfg.defaultSessionKey;
+            } catch (error) {
+                console.warn('Config load failed:', error);
+            }
+        }
+
+        async function loadSessions() {
+            try {
+                const response = await fetch('/api/sessions');
+                const data = await response.json();
+                const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+
+                if (data.defaultSessionKey) defaultSessionKey = data.defaultSessionKey;
+
+                sessionSelect.innerHTML = '<option value="">Select session...</option>';
+
+                sessions.forEach((session) => {
+                    const option = document.createElement('option');
+                    option.value = session.sessionKey;
+                    option.textContent = buildSessionLabel(session);
+                    sessionSelect.appendChild(option);
+                });
+
+                if (sessions.length === 0) {
+                    stopHistoryPolling();
+                    setOnlineState(false, 'No sessions');
+                    return;
+                }
+
+                const { selected, notice } = resolvePreferredSession(sessions);
+                if (!selected?.sessionKey) {
+                    setOnlineState(false, 'No sessions');
+                    return;
+                }
+
+                await selectSession(selected.sessionKey, { notice });
+            } catch (error) {
+                console.error('Error loading sessions:', error);
+                stopHistoryPolling();
+                sessionSelect.innerHTML = '<option value="">Error</option>';
+                setOnlineState(false, 'Session load failed');
+            }
+        }
+
+        async function selectSession(sessionKey, options = {}) {
+            if (!sessionKey) return;
+
+            currentSessionKey = sessionKey;
+            localStorage.setItem(SESSION_STORAGE_KEY, sessionKey);
+            sessionSelect.value = sessionKey;
+            setOnlineState(true, 'Loading history...');
+
+            try {
+                const messages = await fetchHistoryMessages(sessionKey);
+                renderHistory(messages);
+                renderPendingForSession(sessionKey);
+                if (options.notice) addMessage('system', options.notice);
+                setOnlineState(true, queueStatusText(sessionKey));
+                startHistoryPolling();
+                processQueue();
+            } catch (error) {
+                console.error('History load error:', error);
+                renderHistory([]);
+                renderPendingForSession(sessionKey);
+                if (options.notice) addMessage('system', options.notice);
+                setOnlineState(true, queueStatusText(sessionKey));
+                startHistoryPolling();
+                processQueue();
+            }
+        }
+
+        async function processQueue() {
+            if (sending || sendQueue.length === 0) return;
+            if (!currentSessionKey) return;
+
+            const nextIndex = sendQueue.findIndex((item) => !item.sessionKey || item.sessionKey === currentSessionKey);
+            if (nextIndex < 0) return;
+
+            sending = true;
+            const [next] = sendQueue.splice(nextIndex, 1);
+            savePendingQueue(sendQueue);
+
+            setOnlineState(true, queueStatusText(currentSessionKey));
+
+            typingIndicator.classList.add('active');
+            try {
+                const response = await fetch(`/api/sessions/${encodeURIComponent(currentSessionKey)}/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: next.message }),
+                });
+                const data = await response.json();
+
+                if (!data?.success) {
+                    addMessage('system', data?.error || 'Send failed');
+                } else {
+                    const hasSanitizedResponse = Object.prototype.hasOwnProperty.call(data || {}, 'responseText');
+                    const text = hasSanitizedResponse
+                        ? data.responseText
+                        : (data.response?.text || data.response?.message);
+                    if (text && text.trim()) {
+                        rememberLocalAssistantEcho(text);
+                        addMessage('miso', text, { reactionKeyHint: `reply:${next.id}` });
+                    }
+                }
+            } catch (error) {
+                console.error('Send error:', error);
+                addMessage('system', `Send failed: ${error.message}`);
+                sendQueue.unshift(next);
+                savePendingQueue(sendQueue);
+            } finally {
+                typingIndicator.classList.remove('active');
+                sending = false;
+                const remaining = queueCountForSession(currentSessionKey);
+                setOnlineState(true, queueStatusText(currentSessionKey));
+                if (remaining > 0) processQueue();
+            }
+        }
+
+        function sendMessage(text = null) {
+            const raw = text ?? messageInput.value ?? '';
+            const messageText = String(raw).trim();
+            if (!messageText) return;
+            if (!currentSessionKey) {
+                addMessage('system', 'Select a session first.');
+                return;
+            }
+
+            const queuedId = queueId();
+            addMessage('user', messageText, { reactionKeyHint: `queued:${queuedId}` });
+            messageInput.value = '';
+            resizeMessageInput();
+            messageInput.focus();
+            sendQueue.push({
+                id: queuedId,
+                sessionKey: currentSessionKey,
+                message: messageText,
+                createdAt: Date.now(),
+            });
+            savePendingQueue(sendQueue);
+            processQueue();
+        }
+
+        async function refreshCurrentSession() {
+            if (currentSessionKey) {
+                await selectSession(currentSessionKey);
+            } else {
+                await loadSessions();
+            }
+        }
+
+        async function logout() {
+            stopHistoryPolling();
+            try {
+                await fetch('/logout', { method: 'POST' });
+            } finally {
+                window.location.href = '/login';
+            }
+        }
+
+        function resizeMessageInput() {
+            messageInput.style.height = 'auto';
+            const nextHeight = Math.min(messageInput.scrollHeight, 180);
+            messageInput.style.height = `${Math.max(nextHeight, 52)}px`;
+        }
+
+        messageInput.addEventListener('input', resizeMessageInput);
+        messageInput.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+            e.preventDefault();
+            sendMessage();
+        });
+
+        refreshBtn.addEventListener('click', refreshCurrentSession);
+        logoutBtn.addEventListener('click', logout);
+        sendBtn.addEventListener('click', () => sendMessage());
+        soundToggleBtn.addEventListener('click', () => {
+            soundEnabled = !soundEnabled;
+            localStorage.setItem(NOTIFY_SOUND_KEY, soundEnabled ? '1' : '0');
+            updateSoundToggle();
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) clearUnreadNotifications();
+        });
+        window.addEventListener('focus', clearUnreadNotifications);
+
+        (async () => {
+            updateSoundToggle();
+            resizeMessageInput();
+            setOnlineState(false, 'Connecting...');
+            await loadConfig();
+            await loadSessions();
+        })();
+    </script>
 </body>
 </html>
