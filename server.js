@@ -82,7 +82,7 @@ if (process.env.OIDC_ENABLED !== 'true') {
 } else {
   const providerUrl = (process.env.OIDC_PROVIDER_URL || '').trim();
   const providerIssuer = providerUrl
-    ? providerUrl.replace(/\/\.well-known\/openid-configuration\/?$/, '')
+    ? providerUrl.replace(/\/\.well-known\/openid-configuration\/?$/, '/')
     : '';
 
   const issuer = providerIssuer || process.env.OIDC_ISSUER;
