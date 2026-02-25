@@ -423,10 +423,24 @@
     <script>
         let currentSessionKey = null;
         let defaultSessionKey = 'agent:main:main';
-        let sendQueue = [];
+        let sendQueue = loadPendingQueue();
         let sending = false;
 
         const SESSION_STORAGE_KEY = 'miso.selectedSessionKey';
+        const QUEUE_STORAGE_KEY = 'miso.pendingQueue';
+
+        function loadPendingQueue() {
+            try {
+                const stored = localStorage.getItem(QUEUE_STORAGE_KEY);
+                return stored ? JSON.parse(stored) : [];
+            } catch { return []; }
+        }
+
+        function savePendingQueue(queue) {
+            try {
+                localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue));
+            } catch { /* ignore storage errors */ }
+        }
 
         const messagesDiv = document.getElementById('messages');
         const messageInput = document.getElementById('messageInput');
@@ -549,6 +563,7 @@
 
             sending = true;
             const next = sendQueue.shift();
+            savePendingQueue(sendQueue);
 
             if (sendQueue.length > 0) {
                 setOnlineState(true, `Online · queue ${sendQueue.length}`);
@@ -596,6 +611,7 @@
             messageInput.value = '';
             messageInput.focus();
             sendQueue.push(messageText);
+            savePendingQueue(sendQueue);
             processQueue();
         }
 
