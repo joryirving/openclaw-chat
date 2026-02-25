@@ -251,7 +251,7 @@ function gatewayInvoke(tool, args = {}) {
 
 function gatewayRequestWs(method, params = {}, timeoutMs = 30000) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(GATEWAY_WS_URL, [], { headers: { 'Origin': 'https://miso-chat.jory.dev' } });
+    const ws = new WebSocket(GATEWAY_WS_URL, [], { headers: { 'Origin': new URL(GATEWAY_WS_URL).origin } });
     const connectId = randomUUID();
     const requestId = randomUUID();
     let done = false;
