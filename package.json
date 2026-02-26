@@ -1,6 +1,6 @@
 {
   "name": "miso-chat",
-  "version": "0.1.8",
+  "version": "0.2.0",
   "private": true,
   "main": "server.js",
   "scripts": {
@@ -10,9 +10,9 @@
     "test:ci": "node --check server.js && echo '{}' > test-results.json"
   },
   "dependencies": {
-    "dotenv": "^16.4.5",
-    "express": "^4.21.2",
-    "express-rate-limit": "^7.5.0",
+    "dotenv": "^17.0.0",
+    "express": "^5.0.0",
+    "express-rate-limit": "^8.0.0",
     "express-session": "^1.18.1",
     "passport": "^0.7.0",
     "passport-local": "^1.0.0",
