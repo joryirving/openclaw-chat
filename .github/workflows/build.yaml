@@ -48,10 +48,8 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |-
             type=sha,prefix={{branch}}-
+            type=ref,event=pr,prefix=pr-
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
@@ -64,7 +62,7 @@ jobs:
           platforms: ${{ matrix.platform }}
           tags: ghcr.io/${{ github.repository }}
           labels: ${{ steps.meta.outputs.labels }}
-          outputs: type=image,push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }}
+          outputs: type=image,push-by-digest=true,name-canonical=true,push=true
 
       - name: Export digest
         run: |
@@ -111,23 +109,19 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |-
             type=sha,prefix={{branch}}-
+            type=ref,event=pr,prefix=pr-
             type=raw,value=latest,enable={{is_default_branch}}
-            type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
-            type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{version}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'release' }}
             type=semver,pattern={{major}},enable=${{ github.event_name == 'release' }}
 
       - name: Create manifest list and push
         working-directory: ${{ runner.temp }}/digests
-        if: github.event_name != 'pull_request'
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf 'ghcr.io/${{ github.repository }}@sha256:%s ' *)
 
       - name: Inspect image
-        if: github.event_name != 'pull_request'
         run: |
           first_tag=$(jq -r '.tags[0]' <<< "$DOCKER_METADATA_OUTPUT_JSON")
           docker buildx imagetools inspect "$first_tag"
