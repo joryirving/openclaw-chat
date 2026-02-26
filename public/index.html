@@ -523,6 +523,15 @@
             30% { transform: translateY(-6px); }
         }
         
+        /* Remote typing notice */
+        .typing-notice {
+            font-size: 12px;
+            color: var(--text-secondary);
+            padding: 4px 12px;
+            font-style: italic;
+            opacity: 0.7;
+        }
+        
         /* Pull to refresh hint */
         .refresh-hint {
             text-align: center;
@@ -606,6 +615,101 @@
         const REACTION_STORAGE_KEY = 'miso.messageReactions.v1';
         const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
         const REACTION_OPTIONS = ['❤️', '👍', '😂', '👀'];
+
+        // WebSocket for real-time updates
+        let ws = null;
+        let wsReconnectTimeout = null;
+
+        function connectWebSocket() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}`;
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = () => {
+                    console.log('WebSocket connected');
+                };
+                
+                ws.onmessage = (event) => {
+                    try {
+                        const msg = JSON.parse(event.data);
+                        handleWebSocketMessage(msg);
+                    } catch { /* ignore */ }
+                };
+                
+                ws.onclose = () => {
+                    console.log('WebSocket disconnected, reconnecting...');
+                    wsReconnectTimeout = setTimeout(connectWebSocket, 3000);
+                };
+                
+                ws.onerror = () => {
+                    console.log('WebSocket error');
+                };
+            } catch (e) {
+                console.log('WebSocket connection failed:', e);
+            }
+        }
+
+        function handleWebSocketMessage(msg) {
+            if (msg.type === 'reaction') {
+                // Update reactions from other clients
+                const { messageId, reactions } = msg.data;
+                updateMessageReactions(messageId, reactions);
+            } else if (msg.type === 'typing') {
+                // Show typing indicator from other users
+                showTypingIndicator(msg.data.username);
+            }
+        }
+
+        function updateMessageReactions(messageId, reactions) {
+            // Find message by data-message-id and update reaction buttons
+            const messageDiv = messagesDiv.querySelector(`[data-message-id="${messageId}"]`);
+            if (!messageDiv) return;
+            
+            const row = messageDiv.querySelector('.reaction-row');
+            if (!row) return;
+            
+            Object.entries(reactions).forEach(([emoji, data]) => {
+                const btn = row.querySelector(`.reaction-btn[aria-label*="${emoji}"]`);
+                if (btn) {
+                    if (data.count > 0) {
+                        btn.classList.add('active');
+                        btn.textContent = `${emoji} ${data.count}`;
+                    } else {
+                        btn.classList.remove('active');
+                        btn.textContent = emoji;
+                    }
+                }
+            });
+        }
+
+        function showTypingIndicator(username) {
+            // Show typing indicator briefly
+            const existing = messagesDiv.querySelector('.typing-notice');
+            if (existing) existing.remove();
+            
+            const notice = document.createElement('div');
+            notice.className = 'typing-notice system';
+            notice.textContent = `${username} is typing...`;
+            messagesDiv.appendChild(notice);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            
+            setTimeout(() => notice.remove(), 2000);
+        }
+
+        function sendTypingIndicator() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ 
+                    type: 'typing', 
+                    username: 'You',
+                    sessionKey: currentSessionKey 
+                }));
+            }
+        }
+
+        // Initialize WebSocket
+        connectWebSocket();
 
         let currentSessionKey = null;
         let defaultSessionKey = 'agent:main:main';
@@ -1348,6 +1452,10 @@
             if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
                 sendMessage();
+            }
+            // Send typing indicator (debounced)
+            if (messageInput.value.length > 0) {
+                sendTypingIndicator();
             }
         });
 

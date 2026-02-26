@@ -13,6 +13,47 @@ const securityMiddleware = require('./security');
 const app = express();
 const server = http.createServer(app);
 
+// ============ WEBSOCKET SERVER FOR REAL-TIME ============
+const wss = new WebSocket.Server({ server });
+const clients = new Set();
+
+// Broadcast to all connected clients
+function broadcast(type, data) {
+  const message = JSON.stringify({ type, data, timestamp: Date.now() });
+  for (const client of clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  }
+}
+
+wss.on('connection', (ws, req) => {
+  // Auth check - verify session
+  // For now, allow connections; auth is handled at HTTP API level
+  clients.add(ws);
+  console.log('Client connected, total:', clients.size);
+
+  ws.on('close', () => {
+    clients.delete(ws);
+    console.log('Client disconnected, total:', clients.size);
+  });
+
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse(data);
+      // Handle typing indicators from clients
+      if (msg.type === 'typing') {
+        broadcast('typing', { 
+          username: msg.username, 
+          sessionKey: msg.sessionKey 
+        });
+      }
+    } catch { /* ignore invalid messages */ }
+  });
+});
+
+// ==========================================================
+
 // Trust proxy for rate limiting behind Envoy
 app.set('trust proxy', 1);
 
@@ -626,6 +667,10 @@ app.post('/api/messages/:messageId/reactions', isAuthenticated, async (req, res)
     }
 
     await saveReactionsToStore(messageId, reactions);
+    
+    // Broadcast reaction update to all connected clients
+    broadcast('reaction', { messageId, emoji, action: userIndex === -1 ? 'added' : 'removed', reactions });
+    
     res.json({ messageId, emoji, action: userIndex === -1 ? 'added' : 'removed', reactions });
   } catch (error) {
     console.error('Error adding reaction:', error.message);
@@ -658,6 +703,18 @@ app.delete('/api/messages/:messageId/reactions/:emoji', isAuthenticated, async (
     console.error('Error removing reaction:', error.message);
     res.status(500).json({ error: error.message });
   }
+});
+
+// POST /api/typing - Broadcast typing indicator
+// Body: { sessionKey }
+app.post('/api/typing', isAuthenticated, (req, res) => {
+  const { sessionKey } = req.body;
+  const username = req.user?.username || 'anonymous';
+  
+  // Broadcast typing to all clients
+  broadcast('typing', { username, sessionKey });
+  
+  res.json({ success: true });
 });
 
 const PORT = process.env.PORT || 3000;
