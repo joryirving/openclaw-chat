@@ -1653,12 +1653,25 @@
         }
 
         async function logout() {
+            // Stop all polling first
             stopHistoryPolling();
+            
+            // Clear all localStorage to prevent any session restoration
             try {
-                await fetch('/logout', { method: 'POST' });
-            } finally {
-                window.location.href = '/login';
+                localStorage.clear();
+            } catch (e) {
+                console.warn('localStorage clear failed:', e);
             }
+            
+            // Destroy session on server
+            try {
+                await fetch('/logout', { method: 'POST', credentials: 'include' });
+            } catch (e) {
+                console.warn('Logout fetch failed:', e);
+            }
+            
+            // Force hard redirect to clear all state
+            window.location.replace('/login');
         }
 
         function resizeMessageInput() {
