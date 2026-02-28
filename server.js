@@ -11,6 +11,7 @@ const path = require('path');
 const crypto = require('crypto');
 require('dotenv').config();
 
+const { GatewayWsManager } = require('./lib/gateway-ws');
 const securityMiddleware = require('./security');
 
 const app = express();
@@ -201,6 +202,17 @@ const GATEWAY_WS_CLIENT_MODE = process.env.GATEWAY_WS_CLIENT_MODE || 'webchat';
 const GATEWAY_DEVICE_IDENTITY_PATH = process.env.GATEWAY_DEVICE_IDENTITY_PATH
   || path.join(process.env.HOME || '/home/node', '.openclaw', 'identity', 'device.json');
 const GATEWAY_WS_WAIT_CHALLENGE_MS = Number(process.env.GATEWAY_WS_WAIT_CHALLENGE_MS || 1200);
+
+// Persistent WebSocket manager for gateway connections
+const gatewayWsManager = new GatewayWsManager({
+  wsUrl: GATEWAY_WS_URL,
+  clientId: GATEWAY_WS_CLIENT_ID,
+  clientMode: GATEWAY_WS_CLIENT_MODE,
+  headers: {},
+  maxReconnectAttempts: 5,
+  reconnectDelay: 1000,
+  reconnectBackoff: 2,
+});
 
 const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex');
 let cachedGatewayDeviceIdentity = null;
@@ -846,7 +858,39 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
 });
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+
+// Initialize WebSocket manager at startup
+const initGatewayWsManager = async () => {
+  try {
+    const origin = GATEWAY_WS_ORIGIN || 'http://localhost:3000';
+    await gatewayWsManager.connect(origin);
+    console.log('✅ Persistent Gateway WS manager connected');
+    
+    // Set up reconnection event handlers
+    gatewayWsManager.on('reconnecting', (attempt, delay) => {
+      console.log(`🔄 Gateway WS reconnecting (attempt ${attempt}) in ${delay}ms...`);
+    });
+    
+    gatewayWsManager.on('reconnect-failed', (err) => {
+      console.error('❌ Gateway WS reconnection failed:', err.message);
+    });
+    
+    gatewayWsManager.on('close', (code, reason) => {
+      console.log(`🔌 Gateway WS closed: ${code} ${reason}`);
+    });
+    
+    gatewayWsManager.on('error', (err) => {
+      console.error('⚠️ Gateway WS error:', err.message);
+    });
+    
+  } catch (err) {
+    console.error('❌ Failed to initialize persistent Gateway WS manager:', err.message);
+    console.log('   Will fall back to per-request WebSocket connections');
+  }
+};
+
+// Start server and initialize WS manager
+server.listen(PORT, async () => {
   console.log(`
 🎉 ${APP_TITLE} server running on port ${PORT}
    
@@ -866,4 +910,7 @@ server.listen(PORT, () => {
    - GET  /api/sessions/:key/history
    - POST /api/sessions/:key/send
   `);
+  
+  // Initialize persistent WebSocket manager
+  await initGatewayWsManager();
 });
