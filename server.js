@@ -174,6 +174,30 @@ app.get('/', isAuthenticated, (req, res) => res.sendFile(__dirname + '/public/in
 app.get('/api/auth', (req, res) => res.json({ authenticated: req.isAuthenticated(), user: req.user, oidc: process.env.OIDC_ENABLED === 'true' }));
 app.get('/api/health', (req, res) => res.json({ status: 'healthy', uptime: process.uptime(), timestamp: new Date().toISOString() }));
 
+/**
+ * Infer a readable agent name from session key metadata
+ * Handles formats like: agent:main:main, agent:chatgpt:thread-123, etc.
+ * @param {string} sessionKey - The session key
+ * @returns {string|null} - Formatted agent name or null if cannot infer
+ */
+function inferAgentNameFromKey(sessionKey) {
+  if (!sessionKey || typeof sessionKey !== "string") return null;
+  
+  // Handle agent:agentName:thread format (most common)
+  if (sessionKey.startsWith("agent:")) {
+    const parts = sessionKey.split(":");
+    if (parts.length >= 2) {
+      const agentName = parts[1];
+      // Capitalize first letter, replace dashes/underscores with spaces
+      return agentName
+        .replace(/[-_]/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+    }
+  }
+  
+  return null;
+}
+
 const CHAT_DISPLAY_NAME = process.env.CHAT_DISPLAY_NAME || process.env.ASSISTANT_NAME || 'Miso';
 const APP_TITLE = process.env.APP_TITLE || `${CHAT_DISPLAY_NAME} Chat`;
 const DEFAULT_SESSION_KEY = process.env.OPENCLAW_SESSION_KEY || process.env.MISO_CHAT_SESSION_KEY || 'agent:main:main';
@@ -824,17 +848,22 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       includeDerivedTitles: true,
     });
     const payload = unwrapToolResult(result);
-    const sessions = (payload?.sessions || []).map((s) => ({
-      sessionKey: s.key || s.sessionKey || s.sessionId,
-      displayName: s.displayName || s.agentName || s.key || s.sessionKey,
-      updatedAt: s.updatedAt,
-      kind: s.kind,
-      channel: s.channel,
-      lastMessage: s.lastMessage,
-      title: s.derivedTitle || s.title,
-      agentId: s.agentId,
-      agentName: s.agentName,
-    }));
+    const sessions = (payload?.sessions || []).map((s) => {
+      const sessionKey = s.key || s.sessionKey || s.sessionId;
+      // Infer agent name from session key metadata (e.g., "agent:main:main" -> "Main")
+      const inferredAgentName = inferAgentNameFromKey(sessionKey);
+      return {
+        sessionKey,
+        displayName: s.displayName || s.agentName || inferredAgentName || sessionKey,
+        updatedAt: s.updatedAt,
+        kind: s.kind,
+        channel: s.channel,
+        lastMessage: s.lastMessage,
+        title: s.derivedTitle || s.title,
+        agentId: s.agentId,
+        agentName: s.agentName || inferredAgentName,
+      };
+    });
 
     const deduped = [];
     const seen = new Set();
