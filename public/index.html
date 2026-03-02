@@ -809,7 +809,17 @@
                 height: 20px;
             }
         }
-    </style>
+    /* Settings Modal */
+.settings-modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; }
+.settings-modal.open { display: flex; }
+.settings-content { background: var(--bg-secondary); border-radius: 16px; padding: 24px; width: 90%; max-width: 400px; max-height: 80vh; overflow-y: auto; }
+.settings-content h2 { margin-bottom: 20px; }
+.settings-content label { display: block; margin-bottom: 8px; color: var(--text-secondary); font-size: 14px; }
+.settings-content input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; margin-bottom: 16px; }
+.settings-content .btn { padding: 12px 24px; border: none; border-radius: 8px; font-size: 14px; cursor: pointer; }
+.settings-content .btn-primary { background: var(--accent-gradient); color: white; }
+.settings-content .btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); margin-left: 8px; }
+</style>
 </head>
 <body>
     <header class="header">
@@ -822,6 +832,7 @@
             </div>
         </div>
         <div class="header-controls">
+            <button class="icon-btn" id="settingsBtn" title="Settings" aria-label="Settings">⚙️</button>
             <button class="icon-btn" id="themeToggleBtn" title="Toggle theme" aria-label="Toggle theme">🌙</button>
             <button class="icon-btn" id="refreshBtn" title="Refresh" aria-label="Refresh">↻</button>
             <button class="icon-btn" id="soundToggleBtn" title="Toggle reply sound" aria-label="Toggle reply sound" aria-pressed="false">🔕</button>
@@ -2139,6 +2150,61 @@
         
         messageInput.addEventListener('input', resizeMessageInput);
 
+        
+        // Settings
+        const SERVER_URL_KEY = "miso_server_url"; 
+        let customServerUrl = localStorage.getItem(SERVER_URL_KEY) || "";
+        
+        function getApiUrl(path) {
+            const base = customServerUrl || window.location.origin;
+            return base + path;
+        }
+        
+        // Override fetch to use custom URL
+        const originalFetch = window.fetch;
+        window.fetch = function(url, options) {
+            if (url.startsWith("/api/") || url.startsWith("/logout") || url.startsWith("/config")) {
+                url = getApiUrl(url);
+            }
+            return originalFetch(url, options);
+        };
+        
+        // EventSource override
+        const OriginalEventSource = window.EventSource;
+        window.EventSource = function(url) {
+            if (url.startsWith("/api/")) {
+                url = getApiUrl(url);
+            }
+            return new OriginalEventSource(url);
+        };
+        
+        // Settings modal
+        const settingsBtn = document.getElementById("settingsBtn");
+        const settingsModal = document.getElementById("settingsModal");
+        const serverUrlInput = document.getElementById("serverUrl");
+        const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+        const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+        
+        settingsBtn.addEventListener("click", () => {
+            serverUrlInput.value = customServerUrl || "";
+            settingsModal.classList.add("open");
+        });
+        
+        closeSettingsBtn.addEventListener("click", () => settingsModal.classList.remove("open"));
+        
+        saveSettingsBtn.addEventListener("click", () => {
+            const url = serverUrlInput.value.trim();
+            if (url) {
+                customServerUrl = url;
+                localStorage.setItem(SERVER_URL_KEY, url);
+            } else {
+                customServerUrl = "";
+                localStorage.removeItem(SERVER_URL_KEY);
+            }
+            settingsModal.classList.remove("open");
+            window.location.reload();
+        });
+
         refreshBtn.addEventListener('click', refreshCurrentSession);
         themeToggleBtn.addEventListener('click', toggleTheme);
         logoutBtn.addEventListener('click', logout);
@@ -2164,5 +2230,15 @@
             connectEventSource();
         })();
     </script>
+<!-- Settings Modal -->
+<div class="settings-modal" id="settingsModal">
+  <div class="settings-content">
+    <h2>⚙️ Settings</h2>
+    <label for="serverUrl">Server URL</label>
+    <input type="url" id="serverUrl" placeholder="https://miso-chat.jory.dev">
+    <button class="btn btn-primary" id="saveSettingsBtn">Save</button>
+    <button class="btn btn-secondary" id="closeSettingsBtn">Cancel</button>
+  </div>
+</div>
 </body>
 </html>
