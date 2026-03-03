@@ -19,6 +19,9 @@ const { reactions } = require('./lib/db');
 const app = express();
 const server = http.createServer(app);
 
+const oidcEnabled = process.env.OIDC_ENABLED === 'true';
+const localAuthEnabled = process.env.LOCAL_AUTH_ENABLED !== 'false';
+
 // SSE clients for real-time gateway event forwarding
 const sseClients = new Set();
 
@@ -41,7 +44,6 @@ const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: 'Too many requests, please try again later.' },
-  proxyTrust: true
 });
 app.use('/api/', limiter);
 
@@ -80,9 +82,6 @@ app.use(passport.session());
 
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
-
-const oidcEnabled = process.env.OIDC_ENABLED === 'true';
-const localAuthEnabled = process.env.LOCAL_AUTH_ENABLED !== 'false';
 
 // Local Auth Strategy
 if (localAuthEnabled) {
