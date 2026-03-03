@@ -1,5 +1,7 @@
 const express = require('express');
 const session = require('express-session');
+const { RedisStore } = require('connect-redis');
+const { createClient } = require('redis');
 const http = require('http');
 const WebSocket = require('ws');
 const passport = require('passport');
@@ -78,19 +80,41 @@ app.use((req, res, next) => {
 // Serve static assets, but do NOT auto-serve /index.html at root (keeps auth gate on /)
 app.use(express.static('public', { index: false }));
 
-// Session config
-const sessionMiddleware = session({
+// Session config (Redis-backed when REDIS_URL is set)
+const sessionConfig = {
   secret: process.env.SESSION_SECRET || 'dev-secret-change-in-production',
   resave: false,
   saveUninitialized: false,
-  cookie: { 
+  cookie: {
     secure: process.env.NODE_ENV === 'production',
     httpOnly: true,
     // OIDC auth redirects are cross-site; Strict drops session cookie on callback and causes loops.
     sameSite: oidcEnabled ? 'lax' : 'strict',
-    maxAge: 24 * 60 * 60 * 1000
-  }
-});
+    maxAge: 24 * 60 * 60 * 1000,
+  },
+};
+
+if (process.env.REDIS_URL) {
+  const redisClient = createClient({ url: process.env.REDIS_URL });
+  redisClient.on('error', (err) => {
+    console.error('Redis client error:', err?.message || err);
+  });
+  redisClient.connect().catch((err) => {
+    console.error('Redis connect failed; sessions may not persist across restarts:', err?.message || err);
+  });
+
+  sessionConfig.store = new RedisStore({
+    client: redisClient,
+    prefix: process.env.REDIS_SESSION_PREFIX || 'sess:',
+    ttl: Math.floor((sessionConfig.cookie.maxAge || 0) / 1000) || 86400,
+  });
+
+  console.log(`✅ Session store: Redis (${process.env.REDIS_URL})`);
+} else {
+  console.warn('⚠️ Session store: MemoryStore (REDIS_URL not set)');
+}
+
+const sessionMiddleware = session(sessionConfig);
 app.use(sessionMiddleware);
 
 // Passport initialization
@@ -1066,19 +1090,22 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
 
 // POST /api/sessions/:sessionKey/send - Send message via gateway
 app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => {
+  const requestedSessionKey = req.params.sessionKey;
+  const sessionKey = requestedSessionKey && requestedSessionKey !== 'default'
+    ? requestedSessionKey
+    : DEFAULT_SESSION_KEY;
+  const { message } = req.body;
+
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required' });
+  }
+
+  console.log(`Sending to ${sessionKey}: [message hidden]`);
+
+  // Broadcast typing indicator start
+  broadcastToSseClients('typing.start', { sessionKey, timestamp: Date.now() });
+
   try {
-    const requestedSessionKey = req.params.sessionKey;
-    const sessionKey = requestedSessionKey && requestedSessionKey !== 'default'
-      ? requestedSessionKey
-      : DEFAULT_SESSION_KEY;
-    const { message } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: 'Message is required' });
-    }
-
-    console.log(`Sending to ${sessionKey}: [message hidden]`);
-
     const timeoutSeconds = Number(process.env.SEND_TIMEOUT_SECONDS || 180);
     const requestOrigin = typeof req.headers.origin === 'string' ? req.headers.origin : '';
     const payload = await gatewayChatSend({ sessionKey, message, timeoutSeconds, origin: requestOrigin });
@@ -1098,6 +1125,9 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
       });
     }
     res.status(500).json({ error: msg });
+  } finally {
+    // Broadcast typing indicator stop
+    broadcastToSseClients('typing.stop', { sessionKey, timestamp: Date.now() });
   }
 });
 
