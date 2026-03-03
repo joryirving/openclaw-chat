@@ -829,7 +829,7 @@
             <select id="sessionSelect" class="session-select" onchange="selectSession(this.value)">
                 <option value="">Loading sessions...</option>
             </select>
-            <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">⎋</button>
+            <button class="icon-btn" id="logoutBtn" title="Logout" aria-label="Logout">Logout</button>
         </div>
     </header>
     
@@ -863,7 +863,7 @@
         const REACTION_STORAGE_KEY = 'miso.messageReactions.v1';
         const NOTIFY_SOUND_KEY = 'miso.notify.soundEnabled.v1';
         const REACTION_OPTIONS = ['❤️', '👍', '😂', '👀'];
-        const HISTORY_POLL_INTERVAL_MS = 5000;
+        const HISTORY_POLL_INTERVAL_MS = 8000;
         const THEME_STORAGE_KEY = 'miso.theme.v1';
 
         let currentSessionKey = null;
@@ -872,6 +872,7 @@
         let sending = false;
         let historyPollTimer = null;
         let historyPollInFlight = false;
+        let sseConnected = false;
         let historyMessageKeys = new Set();
         let localAssistantEchoes = new Map();
 
@@ -1645,6 +1646,7 @@
         }
 
         function startHistoryPolling() {
+            if (sseConnected) return;
             stopHistoryPolling();
             historyPollTimer = setInterval(() => {
                 pollSessionHistory();
@@ -1896,43 +1898,34 @@
                 eventSource.close();
             }
             eventSource = new EventSource(apiUrl('/api/events'));
-            
-            eventSource.addEventListener('connected', (e) => {
+
+            eventSource.onopen = () => {
+                sseConnected = true;
+                stopHistoryPolling();
                 console.log('📡 SSE connected');
-            });
-            
-            eventSource.addEventListener('typing.start', (e) => {
-                console.log('📡 typing.start received');
-                typingIndicator.classList.add('active');
-            });
-            
-            eventSource.addEventListener('typing.stop', (e) => {
-                console.log('📡 typing.stop received');
-                typingIndicator.classList.remove('active');
-            });
-            
-            eventSource.addEventListener('message.delta', (e) => {
-                console.log('📡 message.delta received');
-                // Handle streaming response chunks if needed
-            });
-            
-            eventSource.addEventListener('error', (e) => {
-                console.error('📡 Gateway error event:', e.data);
+            };
+
+            eventSource.onmessage = (e) => {
                 try {
-                    const data = JSON.parse(e.data);
-                    if (data?.data?.message) {
-                        addMessage('system', `Gateway error: ${data.data.message}`);
+                    const payload = JSON.parse(e.data || '{}');
+                    const eventType = payload?.event;
+                    const eventData = payload?.data;
+                    if (!eventType) return;
+
+                    if (eventType === 'typing.start') typingIndicator.classList.add('active');
+                    if (eventType === 'typing.stop') typingIndicator.classList.remove('active');
+                    if (eventType === 'error' && eventData?.message) {
+                        addMessage('system', `Gateway error: ${eventData.message}`);
                     }
-                } catch (err) {}
-            });
-            
-            eventSource.addEventListener('connect.challenge', (e) => {
-                console.log('📡 connect.challenge received');
-                // Handle re-authentication if needed
-            });
-            
-            eventSource.onerror = async (err) => {
+                } catch (err) {
+                    // noop
+                }
+            };
+
+            eventSource.onerror = async () => {
+                sseConnected = false;
                 console.warn('📡 SSE connection error, reconnecting...');
+                startHistoryPolling();
                 await refreshBackendHealth();
                 eventSource = null;
                 setTimeout(connectEventSource, 5000);
@@ -2068,7 +2061,7 @@
             
             switch (command) {
                 case 'help':
-                    addMessage('system', 'Available commands:\n- /help - Show this message\n- /clear - Clear chat history\n- /status - Show connection status\n- /stop - Stop current queue processing\n- /backend <url> - Set API base URL (empty to reset)');
+                    addMessage('system', 'Available commands:\n- /help - Show this message\n- /clear - Clear chat history\n- /status - Show connection status\n- /stop - Stop current queue processing\n- /backend <url> - Set API base URL (empty to reset)\n- /logout - Sign out and clear local session state');
                     break;
                 case 'clear':
                     clearChatDisplay();
@@ -2100,6 +2093,9 @@
                     sendQueue = sendQueue.filter(item => item.sessionKey !== currentSessionKey);
                     savePendingQueue(sendQueue);
                     addMessage('system', 'Queue cleared for this session.');
+                    break;
+                case 'logout':
+                    logout();
                     break;
                 default:
                     addMessage('system', `Unknown command: /${command}\nType /help for available commands.`);
