@@ -118,7 +118,7 @@ if (process.env.REDIS_URL) {
     ttl: Math.floor((sessionConfig.cookie.maxAge || 0) / 1000) || 86400,
   });
 
-  console.log(`✅ Session store: Redis (${process.env.REDIS_URL})`);
+  console.log('✅ Session store: Redis (enabled)');
 } else {
   console.warn('⚠️ Session store: MemoryStore (REDIS_URL not set)');
 }
@@ -1281,7 +1281,13 @@ const initGatewayWsManager = async () => {
     
     // Forward gateway events to SSE clients
     gatewayWsManager.on('gateway-event', (eventType, eventData) => {
-      console.log(`📡 Gateway event: ${eventType}`, eventData ? JSON.stringify(eventData).slice(0, 100) : '');
+      // Privacy: do not log event payloads (can contain message content).
+      // Enable payload logging only when explicitly requested for debugging.
+      if (process.env.LOG_GATEWAY_EVENT_PAYLOADS === 'true') {
+        console.log(`📡 Gateway event: ${eventType}`, eventData ? JSON.stringify(eventData).slice(0, 200) : '');
+      } else {
+        console.log(`📡 Gateway event: ${eventType}`);
+      }
       broadcastToSseClients(eventType, eventData);
     });
     
