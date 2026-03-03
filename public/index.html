@@ -310,8 +310,12 @@
             font-size: 16px;
             line-height: 1.5;
             word-wrap: break-word;
+            word-break: break-word;
+            overflow-wrap: anywhere;
             white-space: pre-wrap;
             position: relative;
+            max-width: 100%;
+            box-sizing: border-box;
         }
         
         .message.miso .bubble {
@@ -420,6 +424,7 @@
             text-decoration: underline;
             text-decoration-thickness: 1px;
             text-underline-offset: 2px;
+            word-break: break-all;
         }
 
         .message-link:hover {
@@ -724,6 +729,8 @@
             max-width: 200px;
             max-height: 200px;
             overflow-y: auto;
+            overflow-x: hidden;
+            box-sizing: border-box;
             z-index: 100;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
         }
@@ -768,6 +775,9 @@
             cursor: pointer;
             padding: 4px;
             border-radius: 4px;
+            min-width: 0;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .emoji-picker button:hover {
