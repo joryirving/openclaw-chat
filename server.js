@@ -60,7 +60,16 @@ const limiter = rateLimit({
   },
   skip: (req) => {
     // Never rate-limit realtime/bootstrap reads; this can deadlock the UI.
-    return req.path === '/events' || req.path === '/health' || req.path === '/config' || req.path === '/auth';
+    if (req.path === '/events' || req.path === '/health' || req.path === '/config' || req.path === '/auth') {
+      return true;
+    }
+
+    // Session list/history bootstrap calls are read-paths and must stay available.
+    if (req.method === 'GET' && (req.path === '/sessions' || req.path.startsWith('/sessions/'))) {
+      return true;
+    }
+
+    return false;
   },
   message: { error: 'Too many requests, please try again later.' },
 });
