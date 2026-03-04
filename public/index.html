@@ -947,6 +947,7 @@
         let historyPollTimer = null;
         let historyPollInFlight = false;
         let sseConnected = false;
+        let sseTypingActive = false;
         let historyMessageKeys = new Set();
         let localAssistantEchoes = new Map();
 
@@ -1465,7 +1466,16 @@
         function normalizeBaseUrl(value) {
             const raw = String(value || '').trim();
             if (!raw) return '';
-            return raw.replace(/\/+$/, '');
+
+            const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+
+            try {
+                const parsed = new URL(withScheme);
+                if (!['http:', 'https:'].includes(parsed.protocol)) return '';
+                return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
+            } catch {
+                return '';
+            }
         }
 
         function getApiBaseUrl() {
@@ -1493,6 +1503,22 @@
 
         function apiFetch(path, options = undefined) {
             return fetch(apiUrl(path), options);
+        }
+
+        async function ensureMobileBackendConfigured() {
+            const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
+            if (hasBackendInQuery) return;
+            if (!isLikelyMobile()) return;
+            if (getApiBaseUrl()) return;
+
+            const initial = 'https://miso-chat.jory.dev';
+            const entered = window.prompt('Enter your Miso server URL (e.g. https://miso-chat.jory.dev)', initial);
+            if (entered === null) return;
+
+            const normalized = setApiBaseUrl(entered);
+            if (!normalized) {
+                window.alert('That URL does not look valid. Open the app again and enter a full URL like https://miso-chat.jory.dev');
+            }
         }
 
         const messagesDiv = document.getElementById('messages');
@@ -1652,6 +1678,11 @@
         function queueStatusText(sessionKey) {
             const queued = queueCountForSession(sessionKey);
             return queued > 0 ? `Online · queue ${queued}` : 'Online';
+        }
+
+        function updateTypingIndicator() {
+            const hasQueued = currentSessionKey ? queueCountForSession(currentSessionKey) > 0 : false;
+            typingIndicator.classList.toggle('active', sseTypingActive || sending || hasQueued);
         }
 
         async function refreshBackendHealth() {
@@ -1991,6 +2022,7 @@
 
             eventSource.onopen = () => {
                 sseConnected = true;
+                updateTypingIndicator();
                 console.log('📡 SSE connected');
             };
 
@@ -2001,8 +2033,14 @@
                     const eventData = payload?.data;
                     if (!eventType) return;
 
-                    if (eventType === 'typing.start') typingIndicator.classList.add('active');
-                    if (eventType === 'typing.stop') typingIndicator.classList.remove('active');
+                    if (eventType === 'typing.start') {
+                        sseTypingActive = true;
+                        updateTypingIndicator();
+                    }
+                    if (eventType === 'typing.stop') {
+                        sseTypingActive = false;
+                        updateTypingIndicator();
+                    }
                     if (eventType === 'error' && eventData?.message) {
                         addMessage('system', `Gateway error: ${eventData.message}`);
                     }
@@ -2013,6 +2051,8 @@
 
             eventSource.onerror = async () => {
                 sseConnected = false;
+                sseTypingActive = false;
+                updateTypingIndicator();
                 console.warn('📡 SSE connection error, reconnecting...');
                 startHistoryPolling();
                 await refreshBackendHealth();
@@ -2043,12 +2083,16 @@
 
                 if (sessions.length === 0) {
                     stopHistoryPolling();
+                    sseTypingActive = false;
+                    updateTypingIndicator();
                     setOnlineState(false, 'No sessions');
                     return;
                 }
 
                 const { selected, notice } = resolvePreferredSession(sessions);
                 if (!selected?.sessionKey) {
+                    sseTypingActive = false;
+                    updateTypingIndicator();
                     setOnlineState(false, 'No sessions');
                     return;
                 }
@@ -2057,6 +2101,8 @@
             } catch (error) {
                 console.error('Error loading sessions:', error);
                 stopHistoryPolling();
+                sseTypingActive = false;
+                updateTypingIndicator();
                 sessionSelect.innerHTML = '<option value="">Error</option>';
                 setOnlineState(false, 'Session load failed');
             }
@@ -2066,6 +2112,7 @@
             if (!sessionKey) return;
 
             currentSessionKey = sessionKey;
+            sseTypingActive = false;
             localStorage.setItem(SESSION_STORAGE_KEY, sessionKey);
             sessionSelect.value = sessionKey;
             const selectedMeta = sessionMetaByKey.get(sessionKey);
@@ -2073,6 +2120,7 @@
             assistantNameEl.textContent = sessionAssistant;
             messageInput.placeholder = `Message ${sessionAssistant}...`;
             setOnlineState(true, 'Loading history...');
+            updateTypingIndicator();
 
             try {
                 const messages = await fetchHistoryMessages(sessionKey);
@@ -2103,6 +2151,7 @@
             sending = true;
             const [next] = sendQueue.splice(nextIndex, 1);
             savePendingQueue(sendQueue);
+            updateTypingIndicator();
 
             setOnlineState(true, queueStatusText(currentSessionKey));
 
@@ -2138,6 +2187,7 @@
             } finally {
                 sending = false;
                 const remaining = queueCountForSession(currentSessionKey);
+                updateTypingIndicator();
                 setOnlineState(true, queueStatusText(currentSessionKey));
                 if (remaining > 0) processQueue();
             }
@@ -2260,6 +2310,7 @@
                 createdAt,
             });
             savePendingQueue(sendQueue);
+            updateTypingIndicator();
             processQueue();
         }
 
@@ -2384,6 +2435,7 @@
             messageInput.placeholder = `Message ${configuredAssistantName}...`; 
             resizeMessageInput();
             setOnlineState(false, 'Connecting...');
+            await ensureMobileBackendConfigured();
             await loadConfig();
             await loadSessions();
             connectEventSource();
