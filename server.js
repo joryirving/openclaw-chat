@@ -1162,18 +1162,28 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
           content = m.content?.text || m.text || JSON.stringify(m.content || '');
         }
 
+        const messageId =
+          m.messageId ||
+          m.message_id ||
+          m.id ||
+          m.externalMessageId ||
+          m.external_id ||
+          null;
+
         const text = role === 'assistant' ? sanitizeAssistantText(content) : content;
         const hasContent = typeof text === 'string' && text.trim().length > 0;
         const hasToolCalls = toolCalls.length > 0;
         if (!hasContent && !hasToolCalls) return null;
 
-        // Get reaction counts for this message (match by timestamp prefix)
+        // Get reaction counts for this message (match by timestamp prefix or gateway message id)
         const timestamp = m.timestamp;
         const messageReactions = [];
-        if (timestamp && sessionReactions) {
-          // Look for reactions with timestamp prefix (format: history:timestamp:role:...)
+        if (sessionReactions) {
           for (const [msgId, emojis] of Object.entries(sessionReactions)) {
-            if (msgId.startsWith(`history:${timestamp}:`) || msgId.startsWith(`reply:${timestamp}:`) || msgId.startsWith(`queued:${timestamp}`)) {
+            const matchesTimestamp = timestamp
+              && (msgId.startsWith(`history:${timestamp}:`) || msgId.startsWith(`reply:${timestamp}:`) || msgId.startsWith(`queued:${timestamp}`));
+            const matchesGatewayId = messageId && msgId === `gateway:${messageId}`;
+            if (matchesTimestamp || matchesGatewayId) {
               for (const [emoji, users] of Object.entries(emojis)) {
                 messageReactions.push({ emoji, count: users.length });
               }
@@ -1185,6 +1195,7 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
           role,
           content: hasContent ? text : (hasToolCalls ? ' ' : ''),
           timestamp: m.timestamp,
+          ...(messageId ? { messageId: String(messageId) } : {}),
           ...(hasToolCalls ? { toolCalls } : {}),
           ...(messageReactions.length > 0 ? { reactions: messageReactions } : {}),
         };

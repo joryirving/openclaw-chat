@@ -2373,6 +2373,10 @@
                 });
 
                 contentWrap.appendChild(row);
+
+                // Register this row for live updates when gateway reaction events arrive
+                if (!reactionRowsByKey.has(key)) reactionRowsByKey.set(key, new Set());
+                reactionRowsByKey.get(key).add(row);
             }
 
             // Add timestamp if provided
