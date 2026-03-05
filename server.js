@@ -46,7 +46,10 @@ const defaultCorsOrigins = [
   'ionic://localhost',
 ];
 
-const allowedCorsOrigins = new Set(configuredCorsOrigins.length > 0 ? configuredCorsOrigins : defaultCorsOrigins);
+const allowedCorsOrigins = new Set([
+  ...defaultCorsOrigins,
+  ...configuredCorsOrigins,
+]);
 
 // Enable CORS for frontend connection
 const corsOptions = {
