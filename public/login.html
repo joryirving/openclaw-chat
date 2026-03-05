@@ -98,9 +98,13 @@
     }
 
     const returnTo = params.get('return_to') || '';
+    const mobile = params.get('mobile') === '1';
     if (returnTo) {
       returnToInput.value = returnTo;
-      oidcBtn.href = `/auth/oidc?return_to=${encodeURIComponent(returnTo)}`;
+      const oidcTarget = new URL('/auth/oidc', window.location.origin);
+      oidcTarget.searchParams.set('return_to', returnTo);
+      if (mobile) oidcTarget.searchParams.set('mobile', '1');
+      oidcBtn.href = oidcTarget.toString();
     }
 
     (async () => {

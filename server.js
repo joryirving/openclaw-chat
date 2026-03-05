@@ -264,6 +264,33 @@ function requestWantsJson(req) {
   return acceptHeader.includes('application/json');
 }
 
+const mobileAuthHandoffs = new Map();
+const MOBILE_AUTH_TTL_MS = Number(process.env.MOBILE_AUTH_TTL_MS || 2 * 60 * 1000);
+
+function issueMobileAuthToken(user) {
+  const token = crypto.randomBytes(24).toString('hex');
+  mobileAuthHandoffs.set(token, {
+    user,
+    expiresAt: Date.now() + MOBILE_AUTH_TTL_MS,
+  });
+  return token;
+}
+
+function consumeMobileAuthToken(token) {
+  const entry = mobileAuthHandoffs.get(token);
+  if (!entry) return null;
+  mobileAuthHandoffs.delete(token);
+  if (entry.expiresAt < Date.now()) return null;
+  return entry.user;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of mobileAuthHandoffs.entries()) {
+    if (entry.expiresAt < now) mobileAuthHandoffs.delete(token);
+  }
+}, 60 * 1000).unref?.();
+
 const isAuthenticated = (req, res, next) => {
   if (req.isAuthenticated()) return next();
 
@@ -310,6 +337,7 @@ app.post('/login', (req, res, next) => {
 app.get('/auth/oidc', (req, res, next) => {
   if (!oidcEnabled) return res.redirect('/login?error=oidc_disabled');
   req.session.oidcReturnTo = getReturnTo(req, '/');
+  req.session.oidcMobileFlow = req.query?.mobile === '1';
   return passport.authenticate('oidc')(req, res, next);
 });
 app.get('/auth/oidc/callback', (req, res, next) => {
@@ -326,8 +354,22 @@ app.get('/auth/oidc/callback', (req, res, next) => {
       }
 
       const storedReturnTo = req.session?.oidcReturnTo;
-      if (req.session) delete req.session.oidcReturnTo;
-      return res.redirect(getReturnTo({ query: { return_to: storedReturnTo } }, '/'));
+      const mobileFlow = Boolean(req.session?.oidcMobileFlow);
+      if (req.session) {
+        delete req.session.oidcReturnTo;
+        delete req.session.oidcMobileFlow;
+      }
+
+      const safeReturnTo = getReturnTo({ query: { return_to: storedReturnTo } }, '/');
+      if (mobileFlow) {
+        const token = issueMobileAuthToken(user);
+        const target = new URL('/auth/mobile-complete', `${req.protocol}://${req.get('host')}`);
+        target.searchParams.set('token', token);
+        target.searchParams.set('return_to', safeReturnTo);
+        return res.redirect(target.toString());
+      }
+
+      return res.redirect(safeReturnTo);
     });
   })(req, res, next);
 });
@@ -346,6 +388,55 @@ app.post('/logout', (req, res) => {
       }
       return res.redirect('/login');
     });
+  });
+});
+
+app.get('/auth/mobile-complete', (req, res) => {
+  const token = typeof req.query?.token === 'string' ? req.query.token : '';
+  const returnTo = getReturnTo(req, '/');
+
+  if (!token) {
+    return res.status(400).send('Missing mobile auth token');
+  }
+
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Returning to app…</title></head>
+<body style="font-family: system-ui, sans-serif; background:#0d0d14; color:#fff; display:grid; place-items:center; min-height:100vh; margin:0;">
+  <div style="max-width:520px; padding:24px; text-align:center;">
+    <h2>Login successful</h2>
+    <p>Returning to the app…</p>
+    <p><a id="openApp" href="#" style="color:#7ab7ff">Tap here if nothing happens</a></p>
+  </div>
+  <script>
+    const appTarget = new URL(${JSON.stringify(returnTo)});
+    appTarget.searchParams.set('mobile_token', ${JSON.stringify(token)});
+    const href = appTarget.toString();
+    document.getElementById('openApp').href = href;
+    window.location.replace(href);
+  </script>
+</body></html>`;
+
+  res.setHeader('content-type', 'text/html; charset=utf-8');
+  return res.send(html);
+});
+
+app.post('/api/mobile-auth/consume', (req, res) => {
+  const token = typeof req.body?.token === 'string' ? req.body.token : '';
+  if (!token) {
+    return res.status(400).json({ error: 'Missing token' });
+  }
+
+  const user = consumeMobileAuthToken(token);
+  if (!user) {
+    return res.status(400).json({ error: 'Invalid or expired token' });
+  }
+
+  return req.logIn(user, (err) => {
+    if (err) {
+      return res.status(500).json({ error: 'Failed to establish session' });
+    }
+    return res.json({ ok: true });
   });
 });
 
