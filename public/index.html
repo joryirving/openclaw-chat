@@ -1734,9 +1734,40 @@
             return `${base}${path}`;
         }
 
-        function apiFetch(path, options = undefined) {
-            return fetch(apiUrl(path), options);
+        function loginReturnToUrl() {
+            const current = new URL(window.location.href);
+            const backend = getApiBaseUrl();
+            if (backend) {
+                current.searchParams.set('backend', backend);
+            }
+            return current.toString();
         }
+
+        function loginUrl() {
+            const target = new URL(apiUrl('/login'), window.location.href);
+            target.searchParams.set('return_to', loginReturnToUrl());
+            return target.toString();
+        }
+
+        function handleAuthRequired() {
+            window.location.assign(loginUrl());
+            throw new Error('Authentication required');
+        }
+
+        async function apiFetch(path, options = undefined) {
+            const response = await fetch(apiUrl(path), {
+                credentials: 'include',
+                ...options,
+            });
+
+            if (response.status === 401) {
+                handleAuthRequired();
+            }
+
+            return response;
+        }
+
+        const SANITIZED_SERVER_EXAMPLE_URL = 'https://miso-chat.example.com';
 
         async function ensureMobileBackendConfigured() {
             const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
@@ -1744,13 +1775,12 @@
             if (!isLikelyMobile()) return;
             if (getApiBaseUrl()) return;
 
-            const initial = 'https://miso-chat.example.com';
-            const entered = window.prompt('Enter your Miso server URL (e.g. https://miso-chat.example.com)', initial);
+            const entered = window.prompt(`Enter your Miso server URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`, SANITIZED_SERVER_EXAMPLE_URL);
             if (entered === null) return;
 
             const normalized = setApiBaseUrl(entered);
             if (!normalized) {
-                window.alert('That URL does not look valid. Open the app again and enter a full URL like https://miso-chat.example.com');
+                window.alert(`That URL does not look valid. Open the app again and enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
             }
         }
 
@@ -2793,23 +2823,23 @@
         async function logout() {
             // Stop all polling first
             stopHistoryPolling();
-            
+
             // Clear all localStorage to prevent any session restoration
             try {
                 localStorage.clear();
             } catch (e) {
                 console.warn('localStorage clear failed:', e);
             }
-            
+
             // Destroy session on server
             try {
-                await apiFetch('/logout', { method: 'POST', credentials: 'include' });
+                await fetch(apiUrl('/logout'), { method: 'POST', credentials: 'include' });
             } catch (e) {
                 console.warn('Logout fetch failed:', e);
             }
-            
-            // Force hard redirect to clear all state
-            window.location.replace('/login');
+
+            // Force hard redirect to auth page tied to selected backend
+            window.location.replace(loginUrl());
         }
 
         function resizeMessageInput() {

@@ -232,9 +232,47 @@ if (oidcEnabled) {
   ));
 }
 
+const allowedReturnToSchemes = new Set(['http:', 'https:', 'capacitor:', 'ionic:']);
+
+function getReturnTo(req, fallback = '/') {
+  const raw = typeof req.body?.return_to === 'string' && req.body.return_to.trim()
+    ? req.body.return_to.trim()
+    : (typeof req.query?.return_to === 'string' && req.query.return_to.trim()
+      ? req.query.return_to.trim()
+      : '');
+
+  if (!raw) return fallback;
+  if (raw.startsWith('/')) return raw;
+
+  try {
+    const parsed = new URL(raw);
+    if (!allowedReturnToSchemes.has(parsed.protocol)) return fallback;
+    return parsed.toString();
+  } catch {
+    return fallback;
+  }
+}
+
+function requestWantsJson(req) {
+  if (req.path.startsWith('/api/')) return true;
+  if (req.xhr) return true;
+
+  const acceptHeader = String(req.headers.accept || '').toLowerCase();
+  return acceptHeader.includes('application/json');
+}
+
 const isAuthenticated = (req, res, next) => {
   if (req.isAuthenticated()) return next();
-  res.redirect('/login');
+
+  if (requestWantsJson(req)) {
+    return res.status(401).json({
+      error: 'Authentication required',
+      loginUrl: '/login',
+    });
+  }
+
+  const returnTo = encodeURIComponent(getReturnTo(req, req.originalUrl || '/'));
+  return res.redirect(`/login?return_to=${returnTo}`);
 };
 
 // Login
@@ -255,18 +293,41 @@ app.get('/api/login-options', (req, res) => {
 
 app.post('/login', (req, res, next) => {
   if (!localAuthEnabled) {
-    return res.redirect('/login?error=local_disabled');
+    const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+    return res.redirect(`/login?error=local_disabled&return_to=${returnTo}`);
   }
+
+  const returnTo = getReturnTo(req, '/');
+  const failureReturnTo = encodeURIComponent(returnTo);
   return passport.authenticate('local', {
-    successRedirect: '/',
-    failureRedirect: '/login?error=invalid',
+    successRedirect: returnTo,
+    failureRedirect: `/login?error=invalid&return_to=${failureReturnTo}`,
   })(req, res, next);
 });
 app.get('/auth/oidc', (req, res, next) => {
   if (!oidcEnabled) return res.redirect('/login?error=oidc_disabled');
+  req.session.oidcReturnTo = getReturnTo(req, '/');
   return passport.authenticate('oidc')(req, res, next);
 });
-app.get('/auth/oidc/callback', passport.authenticate('oidc', { successRedirect: '/', failureRedirect: '/login?error=oidc_failed' }));
+app.get('/auth/oidc/callback', (req, res, next) => {
+  passport.authenticate('oidc', (err, user) => {
+    if (err || !user) {
+      const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+      return res.redirect(`/login?error=oidc_failed&return_to=${returnTo}`);
+    }
+
+    return req.logIn(user, (loginErr) => {
+      if (loginErr) {
+        const returnTo = encodeURIComponent(getReturnTo(req, '/'));
+        return res.redirect(`/login?error=oidc_failed&return_to=${returnTo}`);
+      }
+
+      const storedReturnTo = req.session?.oidcReturnTo;
+      if (req.session) delete req.session.oidcReturnTo;
+      return res.redirect(getReturnTo({ query: { return_to: storedReturnTo } }, '/'));
+    });
+  })(req, res, next);
+});
 app.post('/logout', (req, res) => {
   req.logout((logoutErr) => {
     if (logoutErr) {
