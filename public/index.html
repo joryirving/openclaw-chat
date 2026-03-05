@@ -1735,8 +1735,16 @@
         }
 
         function loginReturnToUrl() {
-            const current = new URL(window.location.href);
             const backend = getApiBaseUrl();
+            if (isLikelyMobile()) {
+                const appReturn = new URL('capacitor://localhost/auth/callback');
+                if (backend) {
+                    appReturn.searchParams.set('backend', backend);
+                }
+                return appReturn.toString();
+            }
+
+            const current = new URL(window.location.href);
             if (backend) {
                 current.searchParams.set('backend', backend);
             }
@@ -1746,6 +1754,9 @@
         function loginUrl() {
             const target = new URL(apiUrl('/login'), window.location.href);
             target.searchParams.set('return_to', loginReturnToUrl());
+            if (isLikelyMobile()) {
+                target.searchParams.set('mobile', '1');
+            }
             return target.toString();
         }
 
@@ -1781,6 +1792,29 @@
             const normalized = setApiBaseUrl(entered);
             if (!normalized) {
                 window.alert(`That URL does not look valid. Open the app again and enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
+            }
+        }
+
+        async function consumeMobileAuthTokenFromUrl() {
+            const current = new URL(window.location.href);
+            const token = current.searchParams.get('mobile_token');
+            if (!token) return;
+
+            try {
+                const response = await fetch(apiUrl('/api/mobile-auth/consume'), {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token }),
+                });
+
+                if (!response.ok) {
+                    const payload = await response.json().catch(() => ({}));
+                    throw new Error(payload.error || `Auth consume failed (${response.status})`);
+                }
+            } finally {
+                current.searchParams.delete('mobile_token');
+                window.history.replaceState({}, '', current.toString());
             }
         }
 
@@ -3076,6 +3110,7 @@
             resizeMessageInput();
             setOnlineState(false, 'Connecting...');
             await ensureMobileBackendConfigured();
+            await consumeMobileAuthTokenFromUrl();
             await loadConfig();
             await loadSessions();
             connectEventSource();
