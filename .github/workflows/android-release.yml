@@ -5,6 +5,10 @@ on:
     types: [published]
   workflow_dispatch:
 
+env:
+  NODE_VERSION: '24'
+  JAVA_VERSION: '21'
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,13 +21,13 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
-          node-version: '24'
+          node-version: ${{ env.NODE_VERSION }}
           
       - name: Setup Java
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654 # v5
         with:
           distribution: temurin
-          java-version: '21'
+          java-version: ${{ env.JAVA_VERSION }}
           
       - name: Setup Android SDK
         uses: android-actions/setup-android@9fc6c4e9069bf8d3d10b2204b1fb8f6ef7065407 # v3
@@ -37,17 +41,93 @@ jobs:
           cd android
           ./gradlew assembleDebug
         
-      - name: Upload to Release
+      - name: Get version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version_tag=v$VERSION" >> $GITHUB_OUTPUT
+        
+      - name: Generate Update Manifest
+        if: github.event_name == 'release'
+        run: |
+          cat > update-manifest.json << EOF
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "tag": "${{ steps.version.outputs.version_tag }}",
+            "releaseDate": "${{ github.event.release.created_at }}",
+            "releaseNotes": "${{ github.event.release.body }}",
+            "channels": {
+              "stable": {
+                "version": "${{ steps.version.outputs.version }}",
+                "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/app-debug.apk",
+                "mandatory": false
+              },
+              "beta": {
+                "version": "${{ steps.version.outputs.version }}",
+                "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ steps.version.outputs.version_tag }}/app-debug.apk",
+                "mandatory": false
+              }
+            }
+          }
+          EOF
+          cat update-manifest.json
+        
+      - name: Upload APK to Release
         if: github.event_name == 'release'
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
         with:
-          files: android/app/build/outputs/apk/debug/*.apk
+          files: |
+            android/app/build/outputs/apk/debug/*.apk
+            update-manifest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           
-      - name: Upload Artifacts
+      - name: Upload APK Artifacts
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
         with:
-          name: miso-chat-debug.apk
+          name: miso-chat-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          
+      - name: Upload Manifest Artifacts
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          name: update-manifest
+          path: update-manifest.json
+
+  capgo-sync:
+    name: Sync with Capgo (Optional)
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'release' && secrets.CAPGO_API_KEY != ''
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: Install Capgo CLI
+        run: npm install -g @capgo/cli
+      
+      - name: Sync with Capgo
+        env:
+          CAPGO_API_KEY: ${{ secrets.CAPGO_API_KEY }}
+          CAPGO_APP_ID: ${{ secrets.CAPGO_APP_ID || 'chat.openclaw.miso' }}
+        run: |
+          # Download the release assets
+          gh release download ${{ github.event.release.tag_name }} --pattern "*.apk" --dir ./release-assets
+          
+          # Upload to Capgo for OTA distribution
+          capgo upload \
+            --app-id $CAPGO_APP_ID \
+            --version ${{ github.event.release.tag_name }} \
+            --binary-path ./release-assets/*.apk \
+            --channel stable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
