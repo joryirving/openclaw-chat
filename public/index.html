@@ -2662,7 +2662,15 @@
 
 
         function browserNotificationsSupported() {
-            return typeof window.Notification !== 'undefined';
+            // Check for native Notification API (works in Capacitor WebView)
+            if (typeof window.Notification !== 'undefined') {
+                return true;
+            }
+            // Fallback: Capacitor might expose notifications differently
+            if (typeof window.Capacitor !== 'undefined') {
+                return true; // Assume supported in native platform
+            }
+            return false;
         }
 
         function closeActiveDesktopNotifications() {
