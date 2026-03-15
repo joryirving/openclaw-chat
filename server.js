@@ -1308,6 +1308,17 @@ function extractReplyText(reply) {
   return '';
 }
 
+/** Extract model name from reply payload. */
+function extractReplyModel(reply) {
+  if (!reply) return null;
+  if (typeof reply === 'string') return null;
+  if (typeof reply.model === 'string') return reply.model;
+  if (typeof reply.response?.model === 'string') return reply.response.model;
+  if (typeof reply.data?.model === 'string') return reply.data.model;
+  if (typeof reply.details?.model === 'string') return reply.details.model;
+  return null;
+}
+
 /** Normalize a single tool call from OpenAI (tool_calls) or Anthropic (tool_use) style. */
 function normalizeToolCall(part) {
   if (part?.type === 'tool_calls' && Array.isArray(part.tool_calls)) {
@@ -1825,6 +1836,7 @@ app.get('/api/sessions/:sessionKey/history', isAuthenticated, async (req, res) =
           ...(reactionEvent ? { reactionEvent } : {}),
           ...(hasToolCalls ? { toolCalls } : {}),
           ...(messageReactions.length > 0 ? { reactions: messageReactions } : {}),
+          ...(m.model ? { model: m.model } : {}),
         };
       })
       .filter(Boolean);
@@ -1905,8 +1917,9 @@ app.post('/api/sessions/:sessionKey/send', isAuthenticated, async (req, res) => 
     const responseText = extractReplyText(replyPayload);
     const filteredResponseText = sanitizeAssistantText(responseText);
     const toolCalls = extractReplyToolCalls(replyPayload);
+    const model = extractReplyModel(replyPayload);
 
-    res.json({ success: true, response: payload, responseText: filteredResponseText, toolCalls });
+    res.json({ success: true, response: payload, responseText: filteredResponseText, toolCalls, model });
   } catch (error) {
     console.error('Error sending:', error.message);
     const msg = String(error.message || 'send failed');
