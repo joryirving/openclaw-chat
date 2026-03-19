@@ -39,3 +39,4 @@ jobs:
           body: |
             Auto-generated PR to update package.json version after tag ${{ github.ref_name }}
           labels: chore
+          base: main
