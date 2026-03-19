@@ -39,7 +39,7 @@ jobs:
           git push origin HEAD:main
 
       - name: Create pull request
-        uses: peter-evans/create-pull-request@5e91468a9c4192c315d31a92d2f71e915a303971 # v7.0.2
+        uses: peter-evans/create-pull-request@b24c73e37a38f175c7e21a45376336a2e69913b3 # v7.0.3
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: chore/bump-version-${{ steps.version.outputs.version }}
