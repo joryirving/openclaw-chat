@@ -99,38 +99,3 @@ jobs:
         with:
           name: update-manifest
           path: update-manifest.json
-
-  capgo-sync:
-    name: Sync with Capgo (Optional)
-    runs-on: ubuntu-latest
-    needs: build
-    if: github.event_name == 'release'
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
-        with:
-          node-version: '24'
-          
-      - name: Install Capgo CLI
-        run: npm install -g @capgo/cli
-      
-      - name: Sync with Capgo
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CAPGO_API_KEY: ${{ secrets.CAPGO_API_KEY }}
-          CAPGO_APP_ID: ${{ secrets.CAPGO_APP_ID || 'chat.openclaw.miso' }}
-        run: |
-          # Download the release assets
-          gh release download ${{ github.event.release.tag_name }} --pattern "*.apk" --dir ./release-assets
-          
-          # Upload to Capgo for OTA distribution
-          capgo upload \
-            --app-id $CAPGO_APP_ID \
-            --version ${{ github.event.release.tag_name }} \
-            --binary-path ./release-assets/*.apk \
-            --channel stable
-
