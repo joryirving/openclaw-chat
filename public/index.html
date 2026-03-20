@@ -2449,16 +2449,18 @@
 
         function mobileAuthDebug(event, detail = '') {
             if (!MOBILE_DEBUG_ENABLED) return;
-            const panel = ensureMobileDebugPanel();
-            if (!panel) return;
             const ts = new Date().toISOString().slice(11, 19);
             const safeEvent = sanitizeDebugValue(event);
             const safeDetail = detail ? maskMobileTokenInText(sanitizeDebugValue(detail)) : '';
             const line = '[' + ts + '] ' + safeEvent + (safeDetail ? ' :: ' + safeDetail : '');
+            console.log('[MobileAuthDebug]', line);
+
+            const panel = ensureMobileDebugPanel();
+            if (!panel) return;
             panel.textContent += line + '\n';
             panel.scrollTop = panel.scrollHeight;
-            console.log('[MobileAuthDebug]', event, detail);
         }
+
 
         async function ensureMobileBackendConfigured() {
             const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
