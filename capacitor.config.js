@@ -1,7 +1,7 @@
 const serverUrl = process.env.CAPACITOR_SERVER_URL || process.env.CAPACITOR_URL || '';
 const cookiesEnabled = process.env.CAPACITOR_COOKIES_ENABLED !== 'false';
 const updateChannel = process.env.CAPACITOR_UPDATE_CHANNEL || 'stable';
-const updateMethod = process.env.CAPGO_UPDATE_METHOD || 'auto';
+const updateMethod = process.env.CAPGO_UPDATE_METHOD || 'manual';
 
 const config = {
   appId: process.env.CAPACITOR_APP_ID || 'chat.openclaw.client',
