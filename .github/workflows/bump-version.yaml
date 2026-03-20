@@ -1,10 +1,12 @@
 ---
-name: Auto-bump package.json version
+name: Bump package.json version (manual only)
 on:
-  push:
-    tags:
-      - 'v*'
-      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to set in package.json (e.g. 0.4.6)'
+        required: true
+        type: string
 
 jobs:
   bump-version:
@@ -18,17 +20,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Extract version from tag
+      - name: Normalize version input
         id: version
         run: |
-          TAG="${{ github.ref_name }}"
-          # Remove 'v' prefix if present
-          VERSION="${TAG#v}"
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          RAW='${{ github.event.inputs.version }}'
+          VERSION="${RAW#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Update package.json version
-        run: |
-          npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
+        run: npm version ${{ steps.version.outputs.version }} --no-git-tag-version --allow-same-version
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@22a9089034f40e5a961c8808d113e2c98fb63676 # v7.0.11
@@ -37,7 +37,7 @@ jobs:
           branch: chore/bump-version-${{ steps.version.outputs.version }}
           title: 'chore: bump package.json to ${{ steps.version.outputs.version }}'
           body: |
-            Auto-generated PR to update package.json version after tag ${{ github.ref_name }}
+            Manual PR to update package.json version.
           labels: chore
           base: main
           commit-message: 'chore: bump package.json to ${{ steps.version.outputs.version }}'
