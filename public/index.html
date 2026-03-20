@@ -2403,6 +2403,63 @@
 
         const SANITIZED_SERVER_EXAMPLE_URL = 'https://miso-chat.example.com';
 
+        const MOBILE_DEBUG_ENABLED = true;
+        let mobileAuthDebugPanel = null;
+
+        function sanitizeDebugValue(value) {
+            if (value == null) return '';
+            const text = String(value);
+            return text.length > 280 ? text.slice(0, 277) + '...' : text;
+        }
+
+        function maskMobileTokenInText(value) {
+            const text = String(value || '');
+            return text
+                .replace(/(mobile_token=)([^&#\s]+)/gi, (_, key, token) => key + String(token).slice(0, 6) + '…')
+                .replace(/(\"token\"\s*:\s*\")(.*?)(\")/gi, (_, p1, token, p3) => p1 + String(token).slice(0, 6) + '…' + p3);
+        }
+
+        function ensureMobileDebugPanel() {
+            if (!MOBILE_DEBUG_ENABLED || mobileAuthDebugPanel) return mobileAuthDebugPanel;
+            if (!isLikelyMobile()) return null;
+
+            const panel = document.createElement('div');
+            panel.id = 'mobileAuthDebugPanel';
+            panel.style.cssText = [
+                'position:fixed',
+                'left:8px',
+                'right:8px',
+                'bottom:8px',
+                'z-index:99999',
+                'background:rgba(0,0,0,0.88)',
+                'color:#d1fae5',
+                'font:12px/1.35 ui-monospace, SFMono-Regular, Menlo, monospace',
+                'border:1px solid rgba(16,185,129,0.5)',
+                'border-radius:8px',
+                'padding:8px',
+                'max-height:40vh',
+                'overflow:auto',
+                'white-space:pre-wrap',
+            ].join(';');
+            panel.innerHTML = '<strong style="color:#34d399">Mobile Auth Debug</strong>\n';
+            document.body.appendChild(panel);
+            mobileAuthDebugPanel = panel;
+            return panel;
+        }
+
+        function mobileAuthDebug(event, detail = '') {
+            if (!MOBILE_DEBUG_ENABLED) return;
+            const panel = ensureMobileDebugPanel();
+            if (!panel) return;
+            const ts = new Date().toISOString().slice(11, 19);
+            const safeEvent = sanitizeDebugValue(event);
+            const safeDetail = detail ? maskMobileTokenInText(sanitizeDebugValue(detail)) : '';
+            const line = '[' + ts + '] ' + safeEvent + (safeDetail ? ' :: ' + safeDetail : '');
+            panel.textContent += line + '\n';
+            panel.scrollTop = panel.scrollHeight;
+            console.log('[MobileAuthDebug]', event, detail);
+        }
+
         async function ensureMobileBackendConfigured() {
             const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
             if (hasBackendInQuery) return;
@@ -2419,7 +2476,12 @@
         }
 
         async function consumeMobileAuthToken(token) {
-            if (!token) return;
+            if (!token) {
+                mobileAuthDebug('consume skipped', 'missing token');
+                return;
+            }
+
+            mobileAuthDebug('consume start', 'token=' + String(token).slice(0, 6) + '… endpoint=' + apiUrl('/api/mobile-auth/consume'));
             const response = await fetch(apiUrl('/api/mobile-auth/consume'), {
                 method: 'POST',
                 credentials: 'include',
@@ -2427,8 +2489,16 @@
                 body: JSON.stringify({ token }),
             });
 
+            let payload = {};
+            try {
+                payload = await response.clone().json();
+            } catch {
+                payload = { note: 'non-json response' };
+            }
+
+            mobileAuthDebug('consume response', 'status=' + response.status + ' ok=' + response.ok + ' payload=' + JSON.stringify(payload));
+
             if (!response.ok) {
-                const payload = await response.json().catch(() => ({}));
                 throw new Error(payload.error || `Auth consume failed (${response.status})`);
             }
         }
@@ -2497,26 +2567,39 @@
 
         async function handleMobileAuthCallback(urlString, { reloadOnSuccess = false } = {}) {
             const url = new URL(urlString);
-            if (!isExpectedMobileAuthCallback(url)) return false;
+            mobileAuthDebug('appUrlOpen callback', urlString);
+            if (!isExpectedMobileAuthCallback(url)) {
+                mobileAuthDebug('callback ignored', urlString);
+                return false;
+            }
 
             const backend = extractMobileBackendFromUrl(url);
-            if (backend) setApiBaseUrl(backend);
+            if (backend) {
+                mobileAuthDebug('backend override from callback', backend);
+                setApiBaseUrl(backend);
+            }
 
             const token = extractMobileAuthToken(url);
             if (!token) {
+                mobileAuthDebug('callback missing token', urlString);
                 await recoverFromMobileAuthCallbackFailure('auth callback missing mobile_token');
                 return true;
             }
 
+            mobileAuthDebug('callback token extracted', 'token=' + String(token).slice(0, 6) + '…');
+
             try {
                 await consumeMobileAuthToken(token);
                 await closeNativeBrowserIfOpen();
+                mobileAuthDebug('callback consume success', 'native browser closed');
 
                 if (reloadOnSuccess) {
+                    mobileAuthDebug('reload requested', 'reloading window');
                     window.location.reload();
                 }
                 return true;
             } catch (error) {
+                mobileAuthDebug('callback consume failed', error?.message || String(error));
                 await recoverFromMobileAuthCallbackFailure('auth callback token consume failed', error);
                 return true;
             }
@@ -2524,16 +2607,24 @@
 
         async function consumeMobileAuthTokenFromUrl() {
             const current = new URL(window.location.href);
+            mobileAuthDebug('startup location', window.location.href);
             const token = extractMobileAuthToken(current);
-            if (!token) return;
+            if (!token) {
+                mobileAuthDebug('startup token absent', current.toString());
+                return;
+            }
+
+            mobileAuthDebug('startup token found', 'token=' + String(token).slice(0, 6) + '…');
 
             try {
                 await consumeMobileAuthToken(token);
             } catch (error) {
+                mobileAuthDebug('startup consume failed', error?.message || String(error));
                 await recoverFromMobileAuthCallbackFailure('url token consume failed', error);
             } finally {
                 current.searchParams.delete('mobile_token');
                 window.history.replaceState({}, '', current.toString());
+                mobileAuthDebug('startup cleanup', current.toString());
             }
         }
 
@@ -4293,6 +4384,7 @@ menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeAc
 
         (async () => {
             initTheme();
+            mobileAuthDebug('init', 'native=' + isNativeCapacitor() + ' mobile=' + isLikelyMobile());
             await registerNotificationServiceWorker();
             updateSoundToggle();
             updateDesktopNotificationToggle();
@@ -4307,9 +4399,11 @@ menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeAc
                 const appPlugin = window.Capacitor?.Plugins?.App;
                 if (appPlugin && typeof appPlugin.addListener === 'function') {
                     appPlugin.addListener('appUrlOpen', async (data) => {
+                        mobileAuthDebug('appUrlOpen event', data?.url || '(no url)');
                         try {
                             await handleMobileAuthCallback(data.url, { reloadOnSuccess: true });
                         } catch (error) {
+                            mobileAuthDebug('appUrlOpen handler error', error?.message || String(error));
                             console.error('[DeepLink] callback handling failed', error);
                             await recoverFromMobileAuthCallbackFailure('unexpected appUrlOpen handler error', error);
                         }
