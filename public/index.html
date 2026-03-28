@@ -1162,7 +1162,7 @@
             <h1 id="assistantName">Assistant</h1>
             <div class="status">
                 <span class="status-dot" id="statusDot"></span>
-                <span id="statusText">Connecting...</span>
+                <span id="statusText">Connecting to OpenClaw gateway…</span>
             </div>
             <div class="version-info" id="versionInfo">v0.0.0</div>
         </div>
@@ -2450,7 +2450,7 @@
             sseConnected = false;
             sseTypingActive = false;
             updateTypingIndicator();
-            setOnlineState(false, 'Connecting...');
+            setOnlineState(false, 'Connecting to OpenClaw gateway…');
             await loadSessions();
             connectEventSource();
             await refreshBackendHealth();
@@ -4593,7 +4593,7 @@ menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeAc
             assistantNameEl.textContent = configuredAssistantName;
             messageInput.placeholder = `Message ${configuredAssistantName}...`; 
             resizeMessageInput();
-            setOnlineState(false, 'Connecting...');
+            setOnlineState(false, 'Connecting to OpenClaw gateway…');
             await ensureMobileBackendConfigured();
 
             // Handle deep links on mobile (when app is opened via misochat:// URL)
