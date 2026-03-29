@@ -815,6 +815,13 @@ app.get('/api/auth', (req, res) => res.json({
 
 let gatewayWsLastError = '';
 let gatewayWsLastClose = null;
+const gatewayWsOrigin = process.env.GATEWAY_WS_ORIGIN || 'http://localhost:3000';
+const gatewayWsManager = new GatewayWsManager({
+  wsUrl: process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789',
+  clientId: 'miso-chat',
+  clientVersion: `miso-chat/${APP_VERSION}`,
+  clientMode: 'ui',
+});
 
 app.get('/api/health', (req, res) => {
   res.json({
@@ -1026,8 +1033,7 @@ const PORT = process.env.PORT || 3000;
 // Initialize WebSocket manager at startup
 const initGatewayWsManager = async () => {
   try {
-    const origin = GATEWAY_WS_ORIGIN || 'http://localhost:3000';
-    await gatewayWsManager.connect(origin);
+    await gatewayWsManager.connect(gatewayWsOrigin);
     gatewayWsLastError = '';
     gatewayWsLastClose = null;
     console.log('✅ Persistent Gateway WS manager connected');
@@ -1088,16 +1094,26 @@ const initGatewayWsManager = async () => {
 
 // Start server and initialize WS manager
 server.listen(PORT, async () => {
+  const gatewayHttpUrl = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || '(not set)';
+  const gatewayWsUrl = process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789';
+  const gatewayWsOriginLabel = process.env.GATEWAY_WS_ORIGIN || '(none)';
+  const gatewayWsClientId = 'miso-chat';
+  const gatewayWsClientMode = 'ui';
+  const gatewayDeviceIdentityPath = process.env.GATEWAY_DEVICE_IDENTITY_PATH || '';
+  const defaultSessionKey = process.env.DEFAULT_SESSION_KEY || 'default';
+  const pushNotificationsEnabled = process.env.PUSH_NOTIFICATIONS_ENABLED === 'true';
+  const pushConfigReady = process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY && process.env.PUSH_SUBJECT;
+
   console.log(`
 🎉 miso-chat v${APP_VERSION} server running on port ${PORT}
    
-   Gateway: ${GATEWAY_URL}
-   Gateway WS: ${getGatewayWsUrl()}
-   Gateway WS Origin: ${GATEWAY_WS_ORIGIN || '(none)'}
-   Gateway WS Client: ${GATEWAY_WS_CLIENT_ID} (${GATEWAY_WS_CLIENT_MODE})
-   Gateway Device Identity: ${fs.existsSync(GATEWAY_DEVICE_IDENTITY_PATH) ? GATEWAY_DEVICE_IDENTITY_PATH : 'missing'}
-   Default Session: ${DEFAULT_SESSION_KEY}
-   Push Notifications: ${PUSH_NOTIFICATIONS_ENABLED ? `enabled (${PUSH_CONFIG_READY ? 'configured' : 'misconfigured'})` : 'disabled'}
+   Gateway: ${gatewayHttpUrl}
+   Gateway WS: ${gatewayWsUrl}
+   Gateway WS Origin: ${gatewayWsOriginLabel}
+   Gateway WS Client: ${gatewayWsClientId} (${gatewayWsClientMode})
+   Gateway Device Identity: ${gatewayDeviceIdentityPath && fs.existsSync(gatewayDeviceIdentityPath) ? gatewayDeviceIdentityPath : 'missing'}
+   Default Session: ${defaultSessionKey}
+   Push Notifications: ${pushNotificationsEnabled ? `enabled (${pushConfigReady ? 'configured' : 'misconfigured'})` : 'disabled'}
    Auth: ${process.env.OIDC_ENABLED === 'true' ? 'OIDC' : 'Local'}
    Node Env: ${process.env.NODE_ENV || 'development'}
    
@@ -1108,7 +1124,5 @@ server.listen(PORT, async () => {
    - GET  /api/sessions/:key/history
    - POST /api/sessions/:key/send
   `);
-  
-  // Initialize persistent WebSocket manager
   await initGatewayWsManager();
 });
