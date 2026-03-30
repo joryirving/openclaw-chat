@@ -962,6 +962,36 @@ function normalizeSessionItems(...sources) {
     .filter((item, index, arr) => arr.findIndex((other) => other.sessionKey === item.sessionKey) === index);
 }
 
+
+app.get('/api/assistant-identity', isAuthenticated, async (req, res) => {
+  try {
+    const sessionKey = String(req.query.sessionKey || '').trim();
+    if (!sessionKey) return res.status(400).json({ error: 'sessionKey required' });
+    const result = await gatewayInvoke('agent_identity_get', { sessionKey });
+    const payload = unwrapToolResult(result);
+    return res.json({
+      assistantName: payload?.name || payload?.assistantName || payload?.identity?.name || null,
+      assistantAvatar: payload?.avatarUrl || payload?.assistantAvatar || payload?.identity?.avatarUrl || null,
+      assistantAgentId: payload?.agentId || payload?.assistantAgentId || payload?.id || null,
+    });
+  } catch (error) {
+    console.error('Error fetching assistant identity:', error.message);
+    return res.status(502).json({ error: error.message || 'Failed to fetch assistant identity' });
+  }
+});
+
+app.get('/api/agents', isAuthenticated, async (_req, res) => {
+  try {
+    const result = await gatewayInvoke('agents_list', {});
+    const payload = unwrapToolResult(result);
+    const agents = Array.isArray(payload?.agents) ? payload.agents : Array.isArray(payload) ? payload : [];
+    return res.json({ agents });
+  } catch (error) {
+    console.error('Error fetching agents list:', error.message);
+    return res.status(502).json({ error: error.message || 'Failed to fetch agents list' });
+  }
+});
+
 app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
     if (await waitForGatewayWsReady()) {
