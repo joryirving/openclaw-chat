@@ -816,6 +816,8 @@ app.get('/api/auth', (req, res) => res.json({
 let gatewayWsLastError = '';
 let gatewayWsLastClose = null;
 const gatewayWsOrigin = process.env.GATEWAY_WS_ORIGIN || 'http://localhost:3000';
+const GATEWAY_URL = process.env.GATEWAY_URL || process.env.OPENCLAW_API_URL || 'http://openclaw.llm.svc.cluster.local:18789';
+const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || process.env.GATEWAY_AUTH_TOKEN || '';
 const gatewayWsManager = new GatewayWsManager({
   wsUrl: process.env.GATEWAY_WS_URL || 'ws://openclaw.llm.svc.cluster.local:18789',
   clientId: 'miso-chat',
@@ -838,6 +840,149 @@ app.get('/api/health', (req, res) => {
     gatewayWsLastError,
     gatewayWsLastClose,
   });
+});
+
+
+function normalizeSessionItems(...sources) {
+  const candidates = [];
+  for (const source of sources) {
+    if (Array.isArray(source)) candidates.push(...source);
+  }
+
+  return candidates
+    .map((item) => {
+      if (typeof item === 'string') {
+        return {
+          sessionKey: item,
+          displayName: inferAgentNameFromKey(item) || item,
+          provider: 'openclaw',
+        };
+      }
+
+      const sessionKey = String(
+        item?.sessionKey
+        || item?.key
+        || item?.id
+        || item?.session
+        || ''
+      ).trim();
+
+      if (!sessionKey) return null;
+
+      const displayName = String(
+        item?.displayName
+        || item?.title
+        || item?.name
+        || inferAgentNameFromKey(sessionKey)
+        || sessionKey
+      ).trim();
+
+      return {
+        ...item,
+        sessionKey,
+        displayName,
+        provider: item?.provider || 'openclaw',
+      };
+    })
+    .filter(Boolean)
+    .filter((item, index, arr) => arr.findIndex((other) => other.sessionKey === item.sessionKey) === index);
+}
+
+app.get('/api/sessions', isAuthenticated, async (req, res) => {
+  try {
+    if (gatewayWsManager?.isConnected?.()) {
+      try {
+        const frame = await gatewayWsManager.send('sessions.list', {}, 10);
+        const payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
+        const sessions = normalizeSessionItems(
+          payload,
+          payload?.sessions,
+          payload?.items,
+          frame?.sessions,
+          frame?.items,
+        );
+        if (sessions.length > 0) {
+          return res.json({ sessions });
+        }
+      } catch (wsErr) {
+        console.warn('sessions.list via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
+      }
+    }
+
+    const listSessionsResult = await gatewayInvoke('sessions_list', {});
+    const payload = unwrapToolResult(listSessionsResult);
+    const sessions = normalizeSessionItems(
+      payload,
+      payload?.sessions,
+      payload?.items,
+      listSessionsResult?.sessions,
+      listSessionsResult?.items,
+    );
+
+    return res.json({ sessions });
+  } catch (error) {
+    if (process.env.NODE_ENV === 'development') {
+      return res.json({
+        sessions: [{
+          sessionKey: process.env.DEFAULT_SESSION_KEY || 'default',
+          displayName: inferAgentNameFromKey(process.env.DEFAULT_SESSION_KEY || 'default') || (process.env.DEFAULT_SESSION_KEY || 'default'),
+          provider: 'openclaw',
+          fallback: true,
+        }],
+      });
+    }
+
+    console.error('Error listing sessions:', error.message || error);
+    return res.status(500).json({ error: 'Failed to list sessions' });
+  }
+});
+
+app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
+  try {
+    const sessionKey = String(req.params.key || '').trim();
+    if (!sessionKey) {
+      return res.status(400).json({ error: 'session key is required' });
+    }
+
+    const historyResult = await gatewayInvoke('sessions_history', { sessionKey });
+    const payload = unwrapToolResult(historyResult);
+    const messages = Array.isArray(payload?.messages)
+      ? payload.messages
+      : Array.isArray(payload)
+        ? payload
+        : Array.isArray(historyResult?.messages)
+          ? historyResult.messages
+          : [];
+
+    return res.json({ sessionKey, messages });
+  } catch (error) {
+    console.error('Error fetching session history:', error.message || error);
+    return res.status(500).json({ error: 'Failed to fetch session history' });
+  }
+});
+
+app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
+  try {
+    const sessionKey = String(req.params.key || '').trim();
+    const text = String(req.body?.text || '').trim();
+
+    if (!sessionKey) {
+      return res.status(400).json({ error: 'session key is required' });
+    }
+    if (!text) {
+      return res.status(400).json({ error: 'text is required' });
+    }
+    if (text.length > MAX_CHAT_MESSAGE_LENGTH) {
+      return res.status(400).json({ error: `message exceeds max length (${MAX_CHAT_MESSAGE_LENGTH})` });
+    }
+
+    const result = await gatewayInvoke('chat_send', { sessionKey, text });
+    const payload = unwrapToolResult(result);
+    return res.json({ ok: true, ...(payload && typeof payload === 'object' ? payload : { result: payload ?? result }) });
+  } catch (error) {
+    console.error('Error sending chat message:', error.message || error);
+    return res.status(500).json({ error: 'Failed to send message' });
+  }
 });
 
 // GET /api/link-preview?url=https://example.com - Fetch OG metadata for inline link cards
@@ -964,6 +1109,64 @@ app.post('/api/openclaw-stop', isAuthenticated, async (req, res) => {
  * @param {string} sessionKey - The session key
  * @returns {string|null} - Formatted agent name or null if cannot infer
  */
+
+function gatewayInvoke(tool, args = {}) {
+  return new Promise((resolve, reject) => {
+    const postData = JSON.stringify({ tool, args });
+    const url = new URL('/tools/invoke', GATEWAY_URL);
+    const transport = url.protocol === 'https:' ? https : http;
+
+    const headers = {
+      'Content-Type': 'application/json',
+      'Content-Length': Buffer.byteLength(postData),
+    };
+
+    if (GATEWAY_TOKEN) {
+      headers.Authorization = `Bearer ${GATEWAY_TOKEN}`;
+    }
+
+    const req = transport.request({
+      hostname: url.hostname,
+      port: url.port || (url.protocol === 'https:' ? 443 : 80),
+      path: url.pathname,
+      method: 'POST',
+      headers,
+    }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json.ok) return resolve(json.result);
+          return reject(new Error(json.error?.message || 'Gateway invoke failed'));
+        } catch {
+          return reject(new Error(`Invalid gateway response: ${String(data).slice(0, 200)}`));
+        }
+      });
+    });
+
+    req.on('error', reject);
+    req.write(postData);
+    req.end();
+  });
+}
+
+function unwrapToolResult(result) {
+  if (!result) return {};
+  if (result.details && typeof result.details === 'object') return result.details;
+  const text = result?.content?.find?.((x) => x?.type === 'text')?.text;
+  if (text) {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { text };
+    }
+  }
+  return result;
+}
+
 function inferAgentNameFromKey(sessionKey) {
   if (!sessionKey || typeof sessionKey !== "string") return null;
   
