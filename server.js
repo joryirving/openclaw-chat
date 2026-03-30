@@ -1113,7 +1113,7 @@ app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
     }
 
     if (!payload) {
-      result = await gatewayInvoke('sessions_send', { sessionKey, text });
+      result = await gatewayInvoke('sessions_send', { sessionKey, message: text });
       payload = unwrapToolResult(result);
     }
 
@@ -1146,7 +1146,7 @@ app.post('/api/sessions/:key/send-stream', isAuthenticated, async (req, res) => 
     }
 
     if (!payload) {
-      result = await gatewayInvoke('sessions_send', { sessionKey, text });
+      result = await gatewayInvoke('sessions_send', { sessionKey, message: text });
       payload = unwrapToolResult(result);
     }
 
