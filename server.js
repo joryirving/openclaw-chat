@@ -965,7 +965,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
     if (await waitForGatewayWsReady()) {
       try {
-        const frame = await gatewayWsManager.send('sessions.list', { includeLastMessage: true, includeDerivedTitles: true, includeArchived: false }, 10);
+        const frame = await gatewayWsManager.send('sessions.list', { includeLastMessage: true, includeDerivedTitles: true }, 10);
         const payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
         const sessions = normalizeSessionItems(
           payload,
@@ -982,7 +982,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       }
     }
 
-    const listSessionsResult = await gatewayInvoke('sessions_list', { includeLastMessage: true, includeDerivedTitles: true, includeArchived: false });
+    const listSessionsResult = await gatewayInvoke('sessions_list', { includeLastMessage: true, includeDerivedTitles: true });
     const payload = unwrapToolResult(listSessionsResult);
     const sessions = normalizeSessionItems(
       payload,
@@ -1022,7 +1022,7 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
 
     if (await waitForGatewayWsReady()) {
       try {
-        const frame = await gatewayWsManager.send('sessions.history', { sessionKey }, 10);
+        const frame = await gatewayWsManager.send('chat.history', { sessionKey, limit: 100 }, 10);
         payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
       } catch (wsErr) {
         console.warn('sessions.history via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
