@@ -4517,7 +4517,27 @@
             updateSoundToggle();
             updateDesktopNotificationToggle();
         });
-menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeActionMenu();            if (!browserNotificationsSupported()) return;            if (Notification.permission === 'default') {                const result = await requestDesktopNotificationPermission(true);                if (result !== 'granted') {                    desktopNotificationsEnabled = false;                    localStorage.setItem(NOTIFY_DESKTOP_KEY, '0');                } else {                    desktopNotificationsEnabled = true;                    localStorage.setItem(NOTIFY_DESKTOP_KEY, '1');                }            } else {                desktopNotificationsEnabled = !desktopNotificationsEnabled;                localStorage.setItem(NOTIFY_DESKTOP_KEY, desktopNotificationsEnabled ? '1' : '0');            }            if (!desktopNotificationsEnabled) {                closeActiveDesktopNotifications();            }            updateDesktopNotificationToggle();        });
+        menuDesktopNotifyBtn?.addEventListener('click', async () => {
+            closeActionMenu();
+            if (!browserNotificationsSupported()) return;
+            if (Notification.permission === 'default') {
+                const result = await requestDesktopNotificationPermission(true);
+                if (result !== 'granted') {
+                    desktopNotificationsEnabled = false;
+                    localStorage.setItem(NOTIFY_DESKTOP_KEY, '0');
+                } else {
+                    desktopNotificationsEnabled = true;
+                    localStorage.setItem(NOTIFY_DESKTOP_KEY, '1');
+                }
+            } else {
+                desktopNotificationsEnabled = !desktopNotificationsEnabled;
+                localStorage.setItem(NOTIFY_DESKTOP_KEY, desktopNotificationsEnabled ? '1' : '0');
+            }
+            if (!desktopNotificationsEnabled) {
+                closeActiveDesktopNotifications();
+            }
+            updateDesktopNotificationToggle();
+        });
         menuThemeBtn?.addEventListener('click', () => {
             closeActionMenu();
             toggleTheme();
