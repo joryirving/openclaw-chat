@@ -938,13 +938,14 @@ function normalizeSessionItems(...sources) {
 
       if (!sessionKey) return null;
 
+      const inferredAgentName = inferAgentNameFromKey(sessionKey);
       const title = String(item?.title || item?.name || '').trim();
-      const agentName = String(item?.agentName || item?.agent?.name || '').trim();
+      const agentName = String(item?.agentName || item?.agent?.name || inferredAgentName || '').trim();
       const displayName = String(
         item?.displayName
-        || agentName
         || title
-        || inferAgentNameFromKey(sessionKey)
+        || agentName
+        || inferredAgentName
         || sessionKey
       ).trim();
 
@@ -961,11 +962,41 @@ function normalizeSessionItems(...sources) {
     .filter((item, index, arr) => arr.findIndex((other) => other.sessionKey === item.sessionKey) === index);
 }
 
+
+app.get('/api/assistant-identity', isAuthenticated, async (req, res) => {
+  try {
+    const sessionKey = String(req.query.sessionKey || '').trim();
+    if (!sessionKey) return res.status(400).json({ error: 'sessionKey required' });
+    const result = await gatewayInvoke('agent_identity_get', { sessionKey });
+    const payload = unwrapToolResult(result);
+    return res.json({
+      assistantName: payload?.name || payload?.assistantName || payload?.identity?.name || null,
+      assistantAvatar: payload?.avatarUrl || payload?.assistantAvatar || payload?.identity?.avatarUrl || null,
+      assistantAgentId: payload?.agentId || payload?.assistantAgentId || payload?.id || null,
+    });
+  } catch (error) {
+    console.error('Error fetching assistant identity:', error.message);
+    return res.status(502).json({ error: error.message || 'Failed to fetch assistant identity' });
+  }
+});
+
+app.get('/api/agents', isAuthenticated, async (_req, res) => {
+  try {
+    const result = await gatewayInvoke('agents_list', {});
+    const payload = unwrapToolResult(result);
+    const agents = Array.isArray(payload?.agents) ? payload.agents : Array.isArray(payload) ? payload : [];
+    return res.json({ agents });
+  } catch (error) {
+    console.error('Error fetching agents list:', error.message);
+    return res.status(502).json({ error: error.message || 'Failed to fetch agents list' });
+  }
+});
+
 app.get('/api/sessions', isAuthenticated, async (req, res) => {
   try {
     if (await waitForGatewayWsReady()) {
       try {
-        const frame = await gatewayWsManager.send('sessions.list', { includeLastMessage: true, includeDerivedTitles: true, includeArchived: false }, 10);
+        const frame = await gatewayWsManager.send('sessions.list', { includeLastMessage: true, includeDerivedTitles: true }, 10);
         const payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
         const sessions = normalizeSessionItems(
           payload,
@@ -982,7 +1013,7 @@ app.get('/api/sessions', isAuthenticated, async (req, res) => {
       }
     }
 
-    const listSessionsResult = await gatewayInvoke('sessions_list', { includeLastMessage: true, includeDerivedTitles: true, includeArchived: false });
+    const listSessionsResult = await gatewayInvoke('sessions_list', { includeLastMessage: true, includeDerivedTitles: true });
     const payload = unwrapToolResult(listSessionsResult);
     const sessions = normalizeSessionItems(
       payload,
@@ -1022,7 +1053,7 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
 
     if (await waitForGatewayWsReady()) {
       try {
-        const frame = await gatewayWsManager.send('sessions.history', { sessionKey }, 10);
+        const frame = await gatewayWsManager.send('chat.history', { sessionKey, limit: 100 }, 10);
         payload = frame?.result ?? frame?.payload ?? frame?.data ?? frame;
       } catch (wsErr) {
         console.warn('sessions.history via WS failed, trying HTTP fallback:', wsErr.message || wsErr);
@@ -1353,21 +1384,30 @@ function unwrapToolResult(result) {
   return result;
 }
 
+function humanizeAgentToken(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^g-agent-/, '')
+    .replace(/^agent[-:]/, '')
+    .replace(/[-_]/g, ' ')
+    .replace(/\w/g, (c) => c.toUpperCase());
+}
+
 function inferAgentNameFromKey(sessionKey) {
   if (!sessionKey || typeof sessionKey !== "string") return null;
-  
-  // Handle agent:agentName:thread format (most common)
+
   if (sessionKey.startsWith("agent:")) {
     const parts = sessionKey.split(":");
-    if (parts.length >= 2) {
-      const agentName = parts[1];
-      // Capitalize first letter, replace dashes/underscores with spaces
-      return agentName
-        .replace(/[-_]/g, " ")
-        .replace(/\b\w/g, (c) => c.toUpperCase());
+    if (parts.length >= 2 && parts[1]) {
+      return humanizeAgentToken(parts[1]);
     }
   }
-  
+
+  const webchatMatch = sessionKey.match(/(?:^|:)g-agent-([a-z0-9_]+)(?:[-:]|$)/i);
+  if (webchatMatch?.[1]) {
+    return humanizeAgentToken(webchatMatch[1]);
+  }
+
   return null;
 }
 

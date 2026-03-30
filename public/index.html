@@ -3040,6 +3040,60 @@
             }
         }
 
+
+
+        const agentDirectoryById = new Map();
+
+        async function loadAgentDirectory() {
+            try {
+                const response = await apiFetch('/api/agents');
+                if (!response.ok) return;
+                const data = await response.json();
+                await loadAgentDirectory();
+                const agents = Array.isArray(data?.agents) ? data.agents : [];
+                agentDirectoryById.clear();
+                agents.forEach((agent) => {
+                    const id = String(agent?.id || '').trim();
+                    if (!id) return;
+                    agentDirectoryById.set(id, agent?.identity?.name || agent?.name || id);
+                });
+            } catch (_) {}
+        }
+
+        function extractAgentIdFromSessionKey(sessionKey) {
+            const value = String(sessionKey || '').trim();
+            if (!value) return null;
+            if (value.startsWith('agent:')) {
+                const parts = value.split(':');
+                return parts[1] || null;
+            }
+            const match = value.match(/(?:^|:)g-agent-([a-z0-9_]+)(?:[-:]|$)/i);
+            return match?.[1] || null;
+        }
+
+        async function loadAssistantIdentity(sessionKey) {
+            const response = await apiFetch(`/api/assistant-identity?sessionKey=${encodeURIComponent(sessionKey)}`);
+            if (!response.ok) return null;
+            const data = await response.json();
+            return data?.assistantName ? data : null;
+        }
+
+        function getSessionAgentGroupLabel(session) {
+            const agentId = session?.assistantAgentId || session?.agentId || extractAgentIdFromSessionKey(session?.sessionKey);
+            if (!agentId) return null;
+            return agentDirectoryById.get(agentId) || agentId;
+        }
+
+        function getSessionOptionLabel(session) {
+            const key = session?.sessionKey || '';
+            const shortKey = key.slice(0, 8);
+            const candidates = [session?.title, session?.name, session?.displayName, session?.label]
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+                .filter((value) => value !== key);
+            return candidates[0] || shortKey || key || 'session';
+        }
+
         function buildSessionLoadDiagnostic(error) {
             const status = Number(error?.httpStatus || error?.status || 0);
             const message = String(error?.message || '').trim();
@@ -3092,10 +3146,7 @@
         }
 
         function buildSessionLabel(session) {
-            const key = session.sessionKey || '';
-            const shortKey = key.slice(0, 8);
-            const title = session.title || session.displayName || (key.startsWith('agent:') ? `Agent: ${key.split(':')[1]?.charAt(0).toUpperCase() + key.split(':')[1]?.slice(1)}` : session.channel) || session.kind || 'session';
-            return `${title} · ${shortKey}`;
+            return getSessionOptionLabel(session);
         }
 
         function resolvePreferredSession(sessions) {
@@ -3683,13 +3734,31 @@
                 sessionSelect.disabled = false;
 
                 sessionMetaByKey.clear();
+                const groups = new Map();
                 sessions.forEach((session) => {
                     if (session?.sessionKey) sessionMetaByKey.set(session.sessionKey, session);
-                    const option = document.createElement('option');
-                    option.value = session.sessionKey;
-                    option.textContent = buildSessionLabel(session);
-                    sessionSelect.appendChild(option);
+                    const agentName = getSessionAgentGroupLabel(session) || 'Other';
+                    if (!groups.has(agentName)) groups.set(agentName, []);
+                    groups.get(agentName).push(session);
                 });
+
+                for (const [agentName, groupedSessions] of groups.entries()) {
+                    const container = agentName === 'Other'
+                        ? sessionSelect
+                        : (() => {
+                            const optgroup = document.createElement('optgroup');
+                            optgroup.label = agentName;
+                            sessionSelect.appendChild(optgroup);
+                            return optgroup;
+                        })();
+
+                    groupedSessions.forEach((session) => {
+                        const option = document.createElement('option');
+                        option.value = session.sessionKey;
+                        option.textContent = buildSessionLabel(session);
+                        container.appendChild(option);
+                    });
+                }
 
                 if (sessions.length === 0) {
                     stopHistoryPolling();
@@ -3732,7 +3801,8 @@
             await persistStoredSessionKey(sessionKey);
             sessionSelect.value = sessionKey;
             const selectedMeta = sessionMetaByKey.get(sessionKey);
-            const sessionAssistant = configuredAssistantName || 'Assistant';
+            const identity = await loadAssistantIdentity(sessionKey).catch(() => null);
+            const sessionAssistant = identity?.assistantName || configuredAssistantName || 'Assistant';
             assistantNameEl.textContent = sessionAssistant;
             messageInput.placeholder = `Message ${sessionAssistant}...`;
             clearQueueRetryTimer(true);
