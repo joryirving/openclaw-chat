@@ -2393,16 +2393,30 @@
 
         async function ensureMobileBackendConfigured() {
             const hasBackendInQuery = new URLSearchParams(window.location.search).has('backend');
-            if (hasBackendInQuery) return;
-            if (!isLikelyMobile()) return;
-            if (getApiBaseUrl()) return;
+            if (hasBackendInQuery) return true;
+            if (!isNativeCapacitor()) return true;
+            if (getApiBaseUrl()) return true;
 
-            const entered = window.prompt(`Enter your Miso server URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`, SANITIZED_SERVER_EXAMPLE_URL);
-            if (entered === null) return;
+            while (true) {
+                const entered = window.prompt(`Enter your Miso server URL (e.g. ${SANITIZED_SERVER_EXAMPLE_URL})`, SANITIZED_SERVER_EXAMPLE_URL);
+                if (entered === null) {
+                    window.alert('A backend URL is required before the APK can sign in.');
+                    continue;
+                }
 
-            const normalized = setApiBaseUrl(entered);
-            if (!normalized) {
-                window.alert(`That URL does not look valid. Open the app again and enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
+                const normalized = setApiBaseUrl(entered);
+                if (!normalized) {
+                    window.alert(`That URL does not look valid. Enter a full URL like ${SANITIZED_SERVER_EXAMPLE_URL}`);
+                    continue;
+                }
+
+                const result = await verifyBackendUrl(normalized);
+                if (!result.ok) {
+                    window.alert(result.message || 'Backend verification failed. Please try again.');
+                    continue;
+                }
+
+                return true;
             }
         }
 
@@ -4248,7 +4262,11 @@ menuDesktopNotifyBtn?.addEventListener('click', async () => {            closeAc
             messageInput.placeholder = `Message ${configuredAssistantName}...`; 
             resizeMessageInput();
             setOnlineState(false, 'Connecting...');
-            await ensureMobileBackendConfigured();
+            const backendReady = await ensureMobileBackendConfigured();
+            if (!backendReady) {
+                setOnlineState(false, 'Backend setup required');
+                return;
+            }
 
             // Handle deep links on mobile (when app is opened via misochat:// URL)
             if (isNativeCapacitor()) {
