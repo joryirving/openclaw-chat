@@ -1072,6 +1072,19 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
           ? historyResult.messages
           : []).map((msg) => {
             const role = String(msg?.role || msg?.sender || 'assistant').toLowerCase();
+            const extractTextParts = (parts) => parts
+              .map((part) => {
+                if (typeof part === 'string') return part;
+                if (!part || typeof part !== 'object') return '';
+                if (part?.type === 'tool_call' || part?.type === 'tool_result' || part?.type === 'tool_use') return '';
+                if (part?.type === 'text' && typeof part?.text === 'string') return part.text;
+                if (typeof part?.text === 'string') return part.text;
+                if (typeof part?.content === 'string') return part.content;
+                return '';
+              })
+              .filter(Boolean)
+              .join('\n')
+              .trim();
             const content = typeof msg?.content === 'string'
               ? msg.content
               : typeof msg?.text === 'string'
@@ -1079,25 +1092,9 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
                 : typeof msg?.message === 'string'
                   ? msg.message
                   : Array.isArray(msg?.content)
-                    ? msg.content
-                        .map((part) => {
-                          if (typeof part === 'string') return part;
-                          if (part?.type === 'text' && typeof part?.text === 'string') return part.text;
-                          if (typeof part?.text === 'string') return part.text;
-                          return '';
-                        })
-                        .filter(Boolean)
-                        .join('\n')
+                    ? extractTextParts(msg.content)
                     : Array.isArray(msg?.parts)
-                      ? msg.parts
-                          .map((part) => {
-                            if (typeof part === 'string') return part;
-                            if (part?.type === 'text' && typeof part?.text === 'string') return part.text;
-                            if (typeof part?.text === 'string') return part.text;
-                            return '';
-                          })
-                          .filter(Boolean)
-                          .join('\n')
+                      ? extractTextParts(msg.parts)
                       : '';
             return {
               ...msg,
@@ -1105,8 +1102,11 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
               content,
               timestamp: msg?.timestamp || msg?.createdAt || msg?.time || null,
               model: msg?.model || msg?.response?.model || null,
-              toolCalls: Array.isArray(msg?.toolCalls) ? msg.toolCalls : [],
+              toolCalls: [],
             };
+          }).filter((msg) => {
+            if (msg.role !== 'assistant') return true;
+            return Boolean(String(msg.content || '').trim());
           });
 
     return res.json({ sessionKey, messages });
