@@ -78,3 +78,40 @@ test('POST /api/sessions/:key/send accepts frontend message field and rejects em
     assert.match(String(body.error || ''), /text is required/i);
   });
 });
+
+test('POST /api/sessions/:key/send prefers sanitized assistant content over raw tool-result responseText', async () => {
+  const originalIsConnected = GatewayWsManager.prototype.isConnected;
+  const originalSend = GatewayWsManager.prototype.send;
+
+  GatewayWsManager.prototype.isConnected = () => true;
+  GatewayWsManager.prototype.send = async () => ({
+    result: {
+      responseText: 'tool_result: {"private":true}',
+      response: {
+        model: 'test-model',
+        content: [
+          { type: 'tool_result', content: 'internal tool output' },
+          { type: 'text', text: 'Clean final answer' },
+        ],
+      },
+      toolCalls: [],
+    },
+  });
+
+  try {
+    await withServer(async (base) => {
+      const { res, body } = await fetchJson(base, '/api/sessions/default/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'hello' }),
+      });
+
+      assert.equal(res.status, 200);
+      assert.equal(body.responseText, 'Clean final answer');
+      assert.equal(body.responseText.includes('tool_result'), false);
+    });
+  } finally {
+    GatewayWsManager.prototype.isConnected = originalIsConnected;
+    GatewayWsManager.prototype.send = originalSend;
+  }
+});
