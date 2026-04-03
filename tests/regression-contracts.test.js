@@ -115,3 +115,44 @@ test('POST /api/sessions/:key/send prefers sanitized assistant content over raw 
     GatewayWsManager.prototype.send = originalSend;
   }
 });
+
+test('POST /api/sessions/:key/send-stream emits sanitized assistant text instead of raw tool output', async () => {
+  const originalIsConnected = GatewayWsManager.prototype.isConnected;
+  const originalSend = GatewayWsManager.prototype.send;
+
+  GatewayWsManager.prototype.isConnected = () => true;
+  GatewayWsManager.prototype.send = async () => ({
+    result: {
+      responseText: 'tool_result: {"private":true}',
+      response: {
+        model: 'test-model',
+        content: [
+          { type: 'tool_result', content: 'internal tool output' },
+          { type: 'text', text: 'Clean streamed answer' },
+        ],
+      },
+      toolCalls: [],
+    },
+  });
+
+  try {
+    await withServer(async (base) => {
+      const res = await fetch(`${base}/api/sessions/default/send-stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: 'hello' }),
+      });
+
+      assert.equal(res.status, 200);
+      assert.match(String(res.headers.get('content-type') || ''), /text\/event-stream/i);
+
+      const text = await res.text();
+      assert.match(text, /Clean streamed answer/);
+      assert.doesNotMatch(text, /tool_result/);
+      assert.doesNotMatch(text, /internal tool output/);
+    });
+  } finally {
+    GatewayWsManager.prototype.isConnected = originalIsConnected;
+    GatewayWsManager.prototype.send = originalSend;
+  }
+});
