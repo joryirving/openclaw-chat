@@ -912,6 +912,39 @@ app.get('/api/health', (req, res) => {
 });
 
 
+function extractTextParts(parts) {
+  return (Array.isArray(parts) ? parts : [])
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (!part || typeof part !== 'object') return '';
+      if (part?.type === 'tool_call' || part?.type === 'tool_result' || part?.type === 'tool_use') return '';
+      if (part?.type === 'text' && typeof part?.text === 'string') return part.text;
+      if (typeof part?.text === 'string') return part.text;
+      if (typeof part?.content === 'string') return part.content;
+      return '';
+    })
+    .filter(Boolean)
+    .join('\n')
+    .trim();
+}
+
+function extractUserFacingAssistantText(value) {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object') return '';
+  if (Array.isArray(value)) return extractTextParts(value);
+  if (Array.isArray(value.content)) return extractTextParts(value.content);
+  if (Array.isArray(value.parts)) return extractTextParts(value.parts);
+  if (typeof value.content === 'string') return value.content.trim();
+  if (typeof value.text === 'string') return value.text.trim();
+  if (typeof value.message === 'string') return value.message.trim();
+  if (value.response && typeof value.response === 'object') {
+    const nested = extractUserFacingAssistantText(value.response);
+    if (nested) return nested;
+  }
+  if (typeof value.responseText === 'string') return value.responseText.trim();
+  return '';
+}
+
 function normalizeSessionItems(...sources) {
   const candidates = [];
   for (const source of sources) {
@@ -1072,30 +1105,7 @@ app.get('/api/sessions/:key/history', isAuthenticated, async (req, res) => {
           ? historyResult.messages
           : []).map((msg) => {
             const role = String(msg?.role || msg?.sender || 'assistant').toLowerCase();
-            const extractTextParts = (parts) => parts
-              .map((part) => {
-                if (typeof part === 'string') return part;
-                if (!part || typeof part !== 'object') return '';
-                if (part?.type === 'tool_call' || part?.type === 'tool_result' || part?.type === 'tool_use') return '';
-                if (part?.type === 'text' && typeof part?.text === 'string') return part.text;
-                if (typeof part?.text === 'string') return part.text;
-                if (typeof part?.content === 'string') return part.content;
-                return '';
-              })
-              .filter(Boolean)
-              .join('\n')
-              .trim();
-            const content = typeof msg?.content === 'string'
-              ? msg.content
-              : typeof msg?.text === 'string'
-                ? msg.text
-                : typeof msg?.message === 'string'
-                  ? msg.message
-                  : Array.isArray(msg?.content)
-                    ? extractTextParts(msg.content)
-                    : Array.isArray(msg?.parts)
-                      ? extractTextParts(msg.parts)
-                      : '';
+            const content = extractUserFacingAssistantText(msg);
             return {
               ...msg,
               role,
@@ -1149,7 +1159,8 @@ app.post('/api/sessions/:key/send', isAuthenticated, async (req, res) => {
     }
 
     const body = payload && typeof payload === 'object' ? payload : { result: payload ?? result };
-    return res.json({ ok: true, success: true, ...body });
+    const responseText = extractUserFacingAssistantText(body?.response) || extractUserFacingAssistantText(body);
+    return res.json({ ok: true, success: true, ...body, responseText });
   } catch (error) {
     console.error('Error sending chat message:', error.message || error);
     return res.status(500).json({ error: 'Failed to send message' });
@@ -1181,7 +1192,7 @@ app.post('/api/sessions/:key/send-stream', isAuthenticated, async (req, res) => 
       payload = unwrapToolResult(result);
     }
 
-    const responseText = payload?.responseText || payload?.response?.text || payload?.response?.message || payload?.text || '';
+    const responseText = extractUserFacingAssistantText(payload?.response) || extractUserFacingAssistantText(payload);
     const toolCalls = Array.isArray(payload?.toolCalls) ? payload.toolCalls : [];
     const model = payload?.response?.model || payload?.model || null;
 

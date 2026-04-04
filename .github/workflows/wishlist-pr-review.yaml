@@ -6,7 +6,6 @@ on:
     branches: ["main"]
     types: [opened, reopened, synchronize, ready_for_review]
 
-# Limit concurrency — only one wishlist review runs at a time
 concurrency:
   group: wishlist-pr-review
   cancel-in-progress: false
@@ -34,6 +33,8 @@ jobs:
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
       MINIMAX_BASE_URL: "https://api.minimax.io/anthropic/v1"
       MINIMAX_MODEL: "MiniMax-M2.7"
+      BOT_APP_ID: ${{ secrets.MISO_BOT_APP_ID }}
+      BOT_APP_PRIVATE_KEY: ${{ secrets.MISO_BOT_PRIVATE_KEY }}
 
     steps:
       - name: Checkout
@@ -47,19 +48,11 @@ jobs:
           set -euo pipefail
           : "${MINIMAX_API_KEY:?Missing secret MINIMAX_API_KEY — add it in repo settings -> secrets}"
 
-      - name: Configure 1Password (bot token)
-        uses: 1password/load-secrets-action/configure@92467eb28f72e8255933372f1e0707c567ce2259 # v4.0.0
-        with:
-          connect-host: ${{ secrets.dashboardsCONNECT_HOST || secrets.OP_CONNECT_HOST }}
-          connect-token: ${{ secrets.dashboardsCONNECT_TOKEN || secrets.OP_CONNECT_TOKEN }}
-
-      - name: Get Bot Secrets
-        uses: 1password/load-secrets-action@92467eb28f72e8255933372f1e0707c567ce2259 # v4.0.0
-        with:
-          export-env: true
-        env:
-          BOT_APP_ID: op://Kubernetes/openclaw/MISO_BOT_ID
-          BOT_APP_PRIVATE_KEY: op://Kubernetes/openclaw/MISO_BOT_PRIVATE_KEY
+      - name: Validate bot secrets
+        run: |
+          set -euo pipefail
+          : "${BOT_APP_ID:?Missing secret MISO_BOT_APP_ID — add it in repo settings -> secrets}"
+          : "${BOT_APP_PRIVATE_KEY:?Missing secret MISO_BOT_PRIVATE_KEY — add it in repo settings -> secrets}"
 
       - name: Generate bot token
         id: app-token
@@ -88,18 +81,14 @@ jobs:
             > pr.json
 
           gh pr diff "$PR_NUMBER" --repo "$REPO" > pr.diff
-
-          # Truncate diff to avoid huge context
           head -c 100000 pr.diff > pr.diff.truncated
 
           gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate > pr-files.raw.json
           jq '[.[] | {filename,status,additions,deletions,changes,patch}]' pr-files.raw.json > pr-files.json
           head -c 60000 pr-files.json > pr-files.truncated.json
 
-          # Check for issue reference in PR body
           jq -r '.body // ""' pr.json | grep -oE '#[0-9]+' | head -5 > linked-issues.txt || true
 
-          # Check file types changed
           jq -r '[.[] | .filename | split(".") | last]' pr-files.raw.json \
             | sort | uniq -c | sort -rn > file-types.txt || true
 
@@ -108,7 +97,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Skip if only lock files, package metadata, or docs changed
           FILETYPES=$(cat file-types.txt 2>/dev/null || true)
           if echo "$FILETYPES" | grep -qvE '^( *[0-9]+ (js|ts|mjs|cjs|jsx|tsx|json|md|yml|yaml|toml))$'; then
             echo "skip_review=false" >> "$GITHUB_OUTPUT"
@@ -116,7 +104,6 @@ jobs:
             exit 0
           fi
 
-          # Skip if only lockfile or package.json unchanged
           CHANGED=$(jq '[.[] | select(.filename | test("\\.(lock|package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml)$") | not)] | length' pr-files.raw.json)
           if [ "$CHANGED" -eq 0 ]; then
             echo "skip_review=true" >> "$GITHUB_OUTPUT"
@@ -134,7 +121,6 @@ jobs:
 
           while IFS= read -r issue_ref; do
             [ -z "$issue_ref" ] && continue
-            # Only process #NUMBER format
             echo "$issue_ref" | grep -qE '^#[0-9]+$' || continue
             num="${issue_ref#\#}"
 
@@ -248,7 +234,6 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
 
           echo "$RESPONSE" > ai-response.json
 
-          # Extract content from response
           jq -r '.choices[0].message.content // empty' ai-response.json > ai-output.raw 2>/dev/null || true
 
           if [ ! -s ai-output.raw ]; then
@@ -256,13 +241,10 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
             exit 0
           fi
 
-          # Strip markdown code fences
           sed -e 's/^```json$//' -e 's/^```$//' ai-output.raw | sed '/^$/d' > ai-output.json
 
-          # Validate JSON
           if ! jq . ai-output.json > /dev/null 2>&1; then
             echo "minimax_parse_failed=true" >> "$GITHUB_OUTPUT"
-            echo "Raw output:" >> "$GITHUB_OUTPUT"
             cat ai-output.raw >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -276,7 +258,6 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
           set -euo pipefail
 
           VERDICT="${{ steps.analyze.outputs.verdict }}"
-          SKIP_REASON=""
 
           if [ "$VERDICT" = "approve" ]; then
             VERDICT_PREFIX="✅ **Automated recommendation: APPROVE**"
@@ -297,24 +278,16 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
           } > review-comment.md
 
           if [ "${{ steps.analyze.outputs.minimax_request_failed || '' }}" = "true" ]; then
-            {
-              echo "_(AI review unavailable — could not reach minimax API or parse response)_"
-              echo
-            } >> review-comment.md
+            echo "_(AI review unavailable — could not reach minimax API or parse response)_" >> review-comment.md
           elif [ "${{ steps.analyze.outputs.minimax_parse_failed || '' }}" = "true" ]; then
-            {
-              echo "_(AI review available but response was not valid JSON — posting raw output)_"
-              echo
-              echo '```'
-              head -c 2000 ai-output.raw 2>/dev/null || echo "(empty)"
-              echo '```'
-              echo
-            } >> review-comment.md
+            echo "_(AI review available but response was not valid JSON — posting raw output)_" >> review-comment.md
+            echo '```' >> review-comment.md
+            head -c 2000 ai-output.raw >> review-comment.md
+            echo '```' >> review-comment.md
           fi
 
           jq -r '.review_markdown // "# Review\n\n(No review content generated)"' ai-output.json >> review-comment.md 2>/dev/null || true
 
-          # Add concerns if present
           CONCERNS=$(jq -e '.concerns | length > 0' ai-output.json 2>/dev/null && jq -r '.concerns[] | "- **[\(.severity)]** \(.text)"' ai-output.json || true)
           if [ -n "$CONCERNS" ]; then
             echo >> review-comment.md
