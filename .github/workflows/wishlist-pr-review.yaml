@@ -5,6 +5,9 @@ on:
   pull_request:
     branches: ["main"]
     types: [opened, reopened, synchronize, ready_for_review]
+  push:
+    branches:
+      - 'fix/**'
 
 # Limit concurrency — only one wishlist review runs at a time
 concurrency:
@@ -20,8 +23,9 @@ jobs:
     name: Wishlist PR Review
     if: >-
       ${{
-        github.event_name == 'pull_request' && !github.event.pull_request.draft &&
-        github.event.pull_request.user.login == 'itsmiso-ai'
+        (github.event_name == 'pull_request' && !github.event.pull_request.draft &&
+        github.event.pull_request.user.login == 'itsmiso-ai') ||
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/fix/'))
       }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
