@@ -5,6 +5,12 @@ on:
   pull_request:
     branches: ["main"]
     types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review (required for manual trigger)'
+        required: true
+        type: number
 
 concurrency:
   group: wishlist-pr-review
@@ -17,73 +23,110 @@ permissions:
 jobs:
   review-wishlist-pr:
     name: Wishlist PR Review
-    if: >-
-      ${{
-        !github.event.pull_request.draft &&
-        github.event.pull_request.user.login == 'itsmiso-ai'
-      }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
-    env:
-      REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_TITLE: ${{ github.event.pull_request.title }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
-      MINIMAX_BASE_URL: "https://api.minimax.io/anthropic/v1"
-      MINIMAX_MODEL: "MiniMax-M2.7"
-      BOT_APP_ID: ${{ secrets.MISO_BOT_APP_ID }}
-      BOT_APP_PRIVATE_KEY: ${{ secrets.MISO_BOT_PRIVATE_KEY }}
-
+    # Validate PR author for pull_request events; skip for workflow_dispatch (manual)
     steps:
+      - name: Check event type and validate PR
+        id: pr-check
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            AUTHOR="${{ github.event.pull_request.user.login }}"
+            if [ "$AUTHOR" != "itsmiso-ai" ]; then
+              echo "PR author ($AUTHOR) is not itsmiso-ai, skipping"
+              exit 0
+            fi
+            if [ "${{ github.event.pull_request.draft }}" = "true" ]; then
+              echo "PR is draft, skipping"
+              exit 0
+            fi
+            echo "PR_VALIDATED=true" >> "$GITHUB_OUTPUT"
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "PR_TITLE=${{ github.event.pull_request.title }}" >> "$GITHUB_OUTPUT"
+            echo "HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+          else
+            # workflow_dispatch — trust the manually triggering user
+            PR_NUM="${{ github.event.inputs.pr_number }}"
+            echo "PR_NUMBER=$PR_NUM" >> "$GITHUB_OUTPUT"
+            echo "PR_VALIDATED=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr-check.outputs.HEAD_SHA || github.event.inputs.pr_number }}
 
-      - name: Validate MINIMAX_API_KEY
+      - name: Validate secrets
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true'
         run: |
           set -euo pipefail
           : "${MINIMAX_API_KEY:?Missing secret MINIMAX_API_KEY — add it in repo settings -> secrets}"
-
-      - name: Validate bot secrets
-        run: |
-          set -euo pipefail
-          : "${BOT_APP_ID:?Missing secret MISO_BOT_APP_ID — add it in repo settings -> secrets}"
-          : "${BOT_APP_PRIVATE_KEY:?Missing secret MISO_BOT_PRIVATE_KEY — add it in repo settings -> secrets}"
+          : "${MISO_BOT_APP_ID:?Missing secret MISO_BOT_APP_ID — add it in repo settings -> secrets}"
+          : "${MISO_BOT_PRIVATE_KEY:?Missing secret MISO_BOT_PRIVATE_KEY — add it in repo settings -> secrets}"
 
       - name: Generate bot token
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true'
         id: app-token
         uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
         with:
-          app-id: ${{ env.BOT_APP_ID }}
-          private-key: ${{ env.BOT_APP_PRIVATE_KEY }}
+          app-id: ${{ env.MISO_BOT_APP_ID }}
+          private-key: ${{ env.MISO_BOT_PRIVATE_KEY }}
 
       - name: Prefer bot token for GitHub API
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true'
         run: |
           set -euo pipefail
           echo "GH_TOKEN=${{ steps.app-token.outputs.token }}" >> "$GITHUB_ENV"
 
       - name: Validate runtime dependencies
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true'
         run: |
           set -euo pipefail
           command -v gh >/dev/null
           command -v jq >/dev/null
 
-      - name: Collect PR context
+      - name: Get PR info for workflow_dispatch
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
 
-          gh pr view "$PR_NUMBER" --repo "$REPO" \
+          PR_NUM="${{ github.event.inputs.pr_number }}"
+          REPO="$GITHUB_REPOSITORY"
+
+          gh pr view "$PR_NUM" --repo "$REPO" \
             --json number,title,body,headRefOid,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url,labels \
             > pr.json
 
-          gh pr diff "$PR_NUMBER" --repo "$REPO" > pr.diff
+          gh pr diff "$PR_NUM" --repo "$REPO" > pr.diff
           head -c 100000 pr.diff > pr.diff.truncated
 
-          gh api "repos/$REPO/pulls/$PR_NUMBER/files" --paginate > pr-files.raw.json
+          gh api "repos/$REPO/pulls/$PR_NUM/files" --paginate > pr-files.raw.json
+          jq '[.[] | {filename,status,additions,deletions,changes,patch}]' pr-files.raw.json > pr-files.json
+          head -c 60000 pr-files.json > pr-files.truncated.json
+
+          jq -r '.body // ""' pr.json | grep -oE '#[0-9]+' | head -5 > linked-issues.txt || true
+
+          jq -r '[.[] | .filename | split(".") | last]' pr-files.raw.json \
+            | sort | uniq -c | sort -rn > file-types.txt || true
+
+      - name: Collect PR context
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && github.event_name == 'pull_request'
+        run: |
+          set -euo pipefail
+
+          gh pr view "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,headRefOid,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url,labels \
+            > pr.json
+
+          gh pr diff "${{ github.event.pull_request.number }}" --repo "$GITHUB_REPOSITORY" > pr.diff
+          head -c 100000 pr.diff > pr.diff.truncated
+
+          gh api "repos/$GITHUB_REPOSITORY/pulls/${{ github.event.pull_request.number }}/files" --paginate > pr-files.raw.json
           jq '[.[] | {filename,status,additions,deletions,changes,patch}]' pr-files.raw.json > pr-files.json
           head -c 60000 pr-files.json > pr-files.truncated.json
 
@@ -94,6 +137,7 @@ jobs:
 
       - name: Check skip criteria
         id: skip-check
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true'
         run: |
           set -euo pipefail
 
@@ -113,7 +157,7 @@ jobs:
           fi
 
       - name: Gather linked issue context
-        if: steps.skip-check.outputs.skip_review != 'true'
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && steps.skip-check.outputs.skip_review != 'true'
         run: |
           set -euo pipefail
 
@@ -127,7 +171,7 @@ jobs:
             echo "## Linked Issue: #$num" >> linked-issues.md
             echo >> linked-issues.md
 
-            if gh issue view "$num" --repo "$REPO" --json number,title,body,state,labels > issue.json 2>/dev/null; then
+            if gh issue view "$num" --repo "$GITHUB_REPOSITORY" --json number,title,body,state,labels > issue.json 2>/dev/null; then
               echo "**Title:** $(jq -r '.title' issue.json)" >> linked-issues.md
               echo "**State:** $(jq -r '.state' issue.json)" >> linked-issues.md
               echo "**Labels:** $(jq -r '[.labels[].name] | join(", ")' issue.json)" >> linked-issues.md
@@ -146,7 +190,7 @@ jobs:
           fi
 
       - name: Gather repo standards (CLAUDE.md)
-        if: steps.skip-check.outputs.skip_review != 'true'
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && steps.skip-check.outputs.skip_review != 'true'
         run: |
           set -euo pipefail
 
@@ -159,7 +203,7 @@ jobs:
           fi
 
       - name: Build review corpus
-        if: steps.skip-check.outputs.skip_review != 'true'
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && steps.skip-check.outputs.skip_review != 'true'
         run: |
           set -euo pipefail
 
@@ -190,7 +234,7 @@ jobs:
           head -c 180000 review-corpus.md > review-corpus.truncated.md
 
       - name: Analyze with minimax
-        if: steps.skip-check.outputs.skip_review != 'true'
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && steps.skip-check.outputs.skip_review != 'true'
         id: analyze
         run: |
           set -euo pipefail
@@ -253,11 +297,12 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
           echo "verdict=$VERDICT" >> "$GITHUB_OUTPUT"
 
       - name: Build review comment
-        if: steps.skip-check.outputs.skip_review != 'true' && steps.analyze.outputs.verdict != ''
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && steps.skip-check.outputs.skip_review != 'true' && steps.analyze.outputs.verdict != ''
         run: |
           set -euo pipefail
 
           VERDICT="${{ steps.analyze.outputs.verdict }}"
+          PR_NUM="${{ steps.pr-check.outputs.PR_NUMBER }}"
 
           if [ "$VERDICT" = "approve" ]; then
             VERDICT_PREFIX="✅ **Automated recommendation: APPROVE**"
@@ -269,7 +314,7 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
 
           {
             echo "<!-- wishlist-review-bot -->"
-            echo "<!-- wishlist-review-sha:${HEAD_SHA} -->"
+            echo "<!-- wishlist-review-sha:${{ steps.pr-check.outputs.HEAD_SHA || github.event.inputs.pr_number }} -->"
             echo
             echo "$VERDICT_PREFIX"
             echo
@@ -299,7 +344,7 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
           echo "_This review is automated and advisory. The final merge decision is always yours._" >> review-comment.md
 
       - name: Post review comment
-        if: steps.skip-check.outputs.skip_review != 'true' && steps.analyze.outputs.verdict != ''
+        if: steps.pr-check.outputs.PR_VALIDATED == 'true' && steps.skip-check.outputs.skip_review != 'true' && steps.analyze.outputs.verdict != ''
         run: |
           set -euo pipefail
 
@@ -308,7 +353,8 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
             exit 0
           fi
 
-          gh pr comment "$PR_NUMBER" --repo "$REPO" \
+          PR_NUM="${{ steps.pr-check.outputs.PR_NUMBER }}"
+          gh pr comment "$PR_NUM" --repo "$GITHUB_REPOSITORY" \
             --edit-last --create-if-none \
             --body-file review-comment.md
 
