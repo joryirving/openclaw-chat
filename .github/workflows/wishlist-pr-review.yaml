@@ -32,19 +32,67 @@ jobs:
 
     env:
       REPO: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      PR_TITLE: ${{ github.event.pull_request.title }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       MINIMAX_API_KEY: ${{ secrets.MINIMAX_API_KEY }}
       MINIMAX_BASE_URL: "https://api.minimax.io/anthropic/v1"
       MINIMAX_MODEL: "MiniMax-M2.7"
 
     steps:
+      - name: Determine PR context
+        id: pr-context
+        run: |
+          set -euo pipefail
+
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            echo "PR_NUMBER=${{ github.event.pull_request.number }}" >> "$GITHUB_OUTPUT"
+            echo "PR_TITLE=${{ github.event.pull_request.title }}" >> "$GITHUB_OUTPUT"
+            echo "HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_OUTPUT"
+            echo "IS_DRAFT=false" >> "$GITHUB_OUTPUT"
+          else
+            # Push event — look up PR by branch
+            BRANCH_NAME="${GITHUB_REF#refs/heads/}"
+            echo "Looking up PR for branch: $BRANCH_NAME"
+
+            PR_DATA=$(gh api "repos/$REPO/pulls" --jq '.[] | select(.head.ref == "'"$BRANCH_NAME"'") | {number, title, state, draft, head: {sha: .head.sha}, user: {login: .user.login}}' 2>/dev/null || echo '{}')
+
+            if [ -z "$PR_DATA" ] || [ "$PR_DATA" = "{}" ]; then
+              echo "No open PR found for branch $BRANCH_NAME"
+              echo "SKIP_REASON=no_pr_found" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            PR_NUMBER=$(echo "$PR_DATA" | jq -r '.number')
+            IS_DRAFT=$(echo "$PR_DATA" | jq -r '.draft')
+            AUTHOR=$(echo "$PR_DATA" | jq -r '.user.login')
+
+            if [ "$IS_DRAFT" = "true" ]; then
+              echo "PR is draft, skipping"
+              echo "SKIP_REASON=draft" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            if [ "$AUTHOR" != "itsmiso-ai" ]; then
+              echo "PR author ($AUTHOR) is not itsmiso-ai, skipping"
+              echo "SKIP_REASON=wrong_author" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+
+            echo "PR_NUMBER=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "HEAD_SHA=$(echo "$PR_DATA" | jq -r '.head.sha')" >> "$GITHUB_OUTPUT"
+            echo "IS_DRAFT=false" >> "$GITHUB_OUTPUT"
+            echo "Found PR #$PR_NUMBER for branch $BRANCH_NAME"
+          fi
+
+      - name: Skip if no PR found
+        if: steps.pr-context.outputs.SKIP_REASON != ''
+        run: |
+          echo "Skipping: ${{ steps.pr-context.outputs.SKIP_REASON }}"
+          exit 0
+
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ steps.pr-context.outputs.HEAD_SHA }}
 
       - name: Validate MINIMAX_API_KEY
         run: |
@@ -86,6 +134,8 @@ jobs:
       - name: Collect PR context
         run: |
           set -euo pipefail
+
+          PR_NUMBER="${{ steps.pr-context.outputs.PR_NUMBER }}"
 
           gh pr view "$PR_NUMBER" --repo "$REPO" \
             --json number,title,body,headRefOid,baseRefName,headRefName,author,changedFiles,additions,deletions,files,url,labels \
@@ -180,6 +230,8 @@ jobs:
         if: steps.skip-check.outputs.skip_review != 'true'
         run: |
           set -euo pipefail
+
+          HEAD_SHA="${{ steps.pr-context.outputs.HEAD_SHA }}"
 
           {
             echo "# PR Metadata"
@@ -280,7 +332,7 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
           set -euo pipefail
 
           VERDICT="${{ steps.analyze.outputs.verdict }}"
-          SKIP_REASON=""
+          HEAD_SHA="${{ steps.pr-context.outputs.HEAD_SHA }}"
 
           if [ "$VERDICT" = "approve" ]; then
             VERDICT_PREFIX="✅ **Automated recommendation: APPROVE**"
@@ -333,6 +385,8 @@ Be conservative. Prefer \"comment\" (post feedback without blocking) if uncertai
         if: steps.skip-check.outputs.skip_review != 'true' && steps.analyze.outputs.verdict != ''
         run: |
           set -euo pipefail
+
+          PR_NUMBER="${{ steps.pr-context.outputs.PR_NUMBER }}"
 
           if [ "${{ steps.analyze.outputs.minimax_request_failed || '' }}" = "true" ]; then
             echo "Skipping comment post — minimax unavailable"
