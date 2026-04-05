@@ -1720,6 +1720,10 @@
             container.appendChild(wrap);
 
             for (const url of urls) {
+                if (isDirectImageUrl(url)) {
+                    addImage(url);
+                    continue;
+                }
                 const preview = await fetchLinkPreview(url);
                 if (!preview) continue;
                 wrap.appendChild(buildLinkPreviewCard(preview));
@@ -1727,6 +1731,16 @@
 
             if (!wrap.childElementCount) {
                 wrap.remove();
+            }
+        }
+
+        function isDirectImageUrl(url) {
+            try {
+                const parsed = new URL(url);
+                const pathname = parsed.pathname.toLowerCase();
+                return /\.(jpg|jpeg|png|gif|webp|bmp|svg)(\?|$)/.test(pathname);
+            } catch {
+                return false;
             }
         }
 
