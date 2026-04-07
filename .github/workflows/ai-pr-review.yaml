@@ -2,43 +2,40 @@ name: AI PR Review
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
+    branches: ["main"]
+    types: [opened, reopened, synchronize, ready_for_review, review_requested]
+  issue_comment:
+    types: [created]
   workflow_dispatch:
 
 permissions:
   contents: read
   pull-requests: write
-  issues: read
-
-concurrency:
-  group: ai-pr-review-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  issues: write
 
 jobs:
   review:
-    name: Review pull request
-    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 50
 
-      - name: Generate Token
-        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
-        id: app-token
+      - id: app-token
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.BOT_APP_ID }}
           private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
 
-      - name: Run AI review
-        uses: quantfive/codepress-review@v4
-        with:
-          github_token: ${{ steps.app-token.outputs.token }}
-          model_provider: "openai-compatible"
-          model_name: "MiniMax-M2.7"
-          openai_compatible_api_key: ${{ secrets.MINIMAX_API_KEY }}
-          openai_compatible_base_url: "https://api.minimax.io/v1"
+      - uses: qodo-ai/pr-agent@v0.31
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          config.model: ${{ secrets.OPENAI_COMPATIBLE_MODEL }}
+          OPENAI__API_BASE: ${{ secrets.OPENAI_COMPATIBLE_URL }}
+          OPENAI__KEY: ${{ secrets.AI_API_KEY }}
+          github_action_config.auto_review: "true"
+          github_action_config.auto_describe: "true"
+          github_action_config.auto_improve: "true"
+          github_action_config.pr_actions: '["opened", "reopened", "ready_for_review", "review_requested"]'
