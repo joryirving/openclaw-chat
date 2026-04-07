@@ -1,0 +1,50 @@
+name: AI PR Review
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: ai-pr-review-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    name: Review pull request
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.pull_request.draft }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Create GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.BOT_APP_ID }}
+          private-key: ${{ secrets.BOT_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: read
+          permission-pull-requests: write
+          permission-issues: read
+
+      - name: Run AI review
+        uses: quantfive/codepress-review@v4
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          model_provider: "openai-compatible"
+          model_name: "MiniMax-M2.7"
+          openai_compatible_api_key: ${{ secrets.MINIMAX_API_KEY }}
+          openai_compatible_base_url: "https://api.minimax.io/v1"
+          blocking_only: true
+          update_pr_description: false
