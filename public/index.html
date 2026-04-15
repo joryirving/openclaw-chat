@@ -2599,14 +2599,15 @@
                 await closeNativeBrowserIfOpen();
 
                 if (reloadOnSuccess) {
+                    // Clean the URL of auth params BEFORE reload to prevent re-triggering
+                    // the consume flow on page load.
                     const current = new URL(window.location.href);
                     current.searchParams.delete('mobile_token');
                     current.searchParams.delete('backend');
                     window.history.replaceState({}, '', current.toString());
-                    await loadConfig().catch(() => {});
-                    await loadSessions().catch(() => {});
-                    connectEventSource();
-                    await refreshBackendHealth().catch(() => {});
+                    // Force a full page reload so the WebView re-initializes with the
+                    // session cookie set by the consume endpoint, preventing 401 loops.
+                    window.location.reload();
                 }
                 return true;
             } catch (error) {
