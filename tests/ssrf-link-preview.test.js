@@ -31,6 +31,10 @@ test('isForbiddenLinkPreviewHost blocks private IPv4 addresses', () => {
   assert.equal(isForbiddenLinkPreviewHost('192.168.255.255'), true);
 });
 
+test('isForbiddenLinkPreviewHost blocks IPv4 broadcast address', () => {
+  assert.equal(isForbiddenLinkPreviewHost('255.255.255.255'), true);
+});
+
 test('isForbiddenLinkPreviewHost blocks private IPv6 addresses', () => {
   assert.equal(isForbiddenLinkPreviewHost('::1'), true);
   assert.equal(isForbiddenLinkPreviewHost('0:0:0:0:0:0:0:1'), true);
@@ -38,6 +42,10 @@ test('isForbiddenLinkPreviewHost blocks private IPv6 addresses', () => {
   assert.equal(isForbiddenLinkPreviewHost('fe80::1'), true);
   assert.equal(isForbiddenLinkPreviewHost('fc00::1'), true);
   assert.equal(isForbiddenLinkPreviewHost('fd00::1'), true);
+});
+
+test('isForbiddenLinkPreviewHost blocks IPv6 unspecified address', () => {
+  assert.equal(isForbiddenLinkPreviewHost('::'), true);
 });
 
 test('isForbiddenLinkPreviewHost allows public hostnames', () => {
@@ -83,4 +91,62 @@ test('hostResolvesToPrivate handles unresolvable hostnames gracefully', () => {
   // Non-existent domain should not throw, should return false (can't confirm private)
   const result = hostResolvesToPrivate('this-domain-definitely-does-not-exist-12345.com');
   assert.ok(typeof result === 'boolean', 'should return a boolean for unresolvable domains');
+});
+
+// ---- Acceptance criteria: IPv6 loopback and private cases ----
+
+test('IPv6 loopback ::1 is blocked', () => {
+  assert.equal(isForbiddenLinkPreviewHost('::1'), true);
+});
+
+test('IPv6 link-local fe80::/10 range is blocked', () => {
+  assert.equal(isForbiddenLinkPreviewHost('fe80::1'), true);
+  assert.equal(isForbiddenLinkPreviewHost('fe80::abcd'), true);
+});
+
+test('IPv6 unique-local fc00::/7 range is blocked', () => {
+  assert.equal(isForbiddenLinkPreviewHost('fc00::1'), true);
+  assert.equal(isForbiddenLinkPreviewHost('fd00::1'), true);
+});
+
+test('IPv6 unspecified :: is blocked', () => {
+  assert.equal(isForbiddenLinkPreviewHost('::'), true);
+});
+
+// ---- Acceptance criteria: Direct private targets ----
+
+test('Direct private IPv4 targets are blocked', () => {
+  assert.equal(isForbiddenLinkPreviewHost('10.0.0.1'), true);
+  assert.equal(isForbiddenLinkPreviewHost('192.168.1.1'), true);
+  assert.equal(isForbiddenLinkPreviewHost('172.16.0.1'), true);
+  assert.equal(isForbiddenLinkPreviewHost('127.0.0.1'), true);
+  assert.equal(isForbiddenLinkPreviewHost('169.254.169.254'), true); // cloud metadata
+});
+
+test('Public IPv4 addresses are allowed', () => {
+  assert.equal(isForbiddenLinkPreviewHost('8.8.8.8'), false);
+  assert.equal(isForbiddenLinkPreviewHost('1.1.1.1'), false);
+  assert.equal(isForbiddenLinkPreviewHost('142.250.80.46'), false); // google.com
+});
+
+// ---- Integration-style: valid public redirect scenario ----
+
+test('Public hostnames are allowed for preview (simulates valid public redirect)', () => {
+  // These represent what would be validated at each hop of a public redirect chain
+  assert.equal(isForbiddenLinkPreviewHost('httpbin.org'), false);
+  assert.equal(isForbiddenLinkPreviewHost('redirect.example.com'), false);
+  assert.equal(isForbiddenLinkPreviewHost('example.com'), false);
+});
+
+// ---- Edge cases ----
+
+test('isForbiddenLinkPreviewHost handles case insensitivity', () => {
+  assert.equal(isForbiddenLinkPreviewHost('LOCALHOST'), true);
+  assert.equal(isForbiddenLinkPreviewHost('LoCaLhOsT'), true);
+  assert.equal(isForbiddenLinkPreviewHost('EXAMPLE.COM'), false);
+});
+
+test('isForbiddenLinkPreviewHost handles .localhost subdomains', () => {
+  assert.equal(isForbiddenLinkPreviewHost('foo.localhost'), true);
+  assert.equal(isForbiddenLinkPreviewHost('bar.foo.localhost'), true);
 });
