@@ -78,6 +78,8 @@ The miso-chat gateway WebSocket client requests OAuth scopes from the OpenClaw g
 
 This reduces blast radius: if a web/session bug exposes gateway capabilities, the default configuration cannot perform admin or pairing actions.
 
+**Note:** Earlier versions of miso-chat included `chat.send`, `sessions.send`, `sessions.list`, and `sessions.history` in `REQUESTED_GATEWAY_SCOPES`. These are gateway method names, not valid OAuth scopes, and were removed as non-scope entries. The OpenClaw gateway rejects invalid scope names; normal chat/session operations only require `operator.read` + `operator.write`.
+
 ### Migration path
 
 Deployments that need admin or pairing features (e.g., device pairing flows, admin tooling) should set:

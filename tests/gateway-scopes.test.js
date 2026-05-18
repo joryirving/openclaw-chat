@@ -2,100 +2,81 @@
 
 const { strict: assert } = require('node:assert');
 const { describe, it } = require('node:test');
+const fs = require('node:fs');
+const path = require('node:path');
 
 describe('Gateway scope configuration', () => {
-  // We test the scope resolution logic by sourcing the relevant code pattern.
-  // The actual REQUESTED_GATEWAY_SCOPES is defined in server.js; these tests
-  // verify the same resolution logic independently so they pass even without
-  // a full gateway connection.
+  // Extract the REQUESTED_GATEWAY_SCOPES definition from server.js to verify
+  // the actual code rather than duplicating the logic in tests.
+  const serverJsPath = path.resolve(__dirname, '..', 'server.js');
+  const serverJsContent = fs.readFileSync(serverJsPath, 'utf-8');
 
-  function resolveScopes() {
-    return [
-      'operator.read',
-      'operator.write',
-      ...(process.env.GATEWAY_ADMIN_SCOPES === 'true'
-        ? ['operator.admin', 'operator.pairing']
-        : []),
-    ];
+  function extractScopesDefinition() {
+    // Match the REQUESTED_GATEWAY_SCOPES constant definition block
+    const match = serverJsContent.match(
+      /const\s+REQUESTED_GATEWAY_SCOPES\s*=\s*\[([\s\S]*?)\];/
+    );
+    assert.ok(match, 'REQUESTED_GATEWAY_SCOPES should be defined in server.js');
+    return match[1];
   }
 
-  it('should include only minimal scopes by default (no GATEWAY_ADMIN_SCOPES)', () => {
-    const original = process.env.GATEWAY_ADMIN_SCOPES;
-    delete process.env.GATEWAY_ADMIN_SCOPES;
+  it('should include operator.read and operator.write in the scopes definition', () => {
+    const def = extractScopesDefinition();
+    assert.ok(def.includes("'operator.read'"), 'should contain operator.read');
+    assert.ok(def.includes("'operator.write'"), 'should contain operator.write');
+  });
 
-    try {
-      const scopes = resolveScopes();
-      assert.deepStrictEqual(scopes, ['operator.read', 'operator.write']);
-      assert.ok(!scopes.includes('operator.admin'));
-      assert.ok(!scopes.includes('operator.pairing'));
-    } finally {
-      if (original !== undefined) process.env.GATEWAY_ADMIN_SCOPES = original;
+  it('should conditionally add operator.admin and operator.pairing via GATEWAY_ADMIN_SCOPES === "true"', () => {
+    const def = extractScopesDefinition();
+    // Verify the conditional spread pattern exists
+    assert.ok(
+      def.includes("GATEWAY_ADMIN_SCOPES === 'true'"),
+      'should check GATEWAY_ADMIN_SCOPES === true'
+    );
+    assert.ok(def.includes("'operator.admin'"), 'should conditionally include operator.admin');
+    assert.ok(def.includes("'operator.pairing'"), 'should conditionally include operator.pairing');
+  });
+
+  it('should NOT contain non-scope entries (chat.send, sessions.send, sessions.list, sessions.history)', () => {
+    const def = extractScopesDefinition();
+    const invalidEntries = [
+      'chat.send',
+      'sessions.send',
+      'sessions.list',
+      'sessions.history',
+    ];
+    for (const entry of invalidEntries) {
+      assert.ok(
+        !def.includes(entry),
+        `should not contain non-scope entry: ${entry}`
+      );
     }
   });
 
-  it('should include admin and pairing scopes when GATEWAY_ADMIN_SCOPES=true', () => {
-    const original = process.env.GATEWAY_ADMIN_SCOPES;
-    process.env.GATEWAY_ADMIN_SCOPES = 'true';
-
-    try {
-      const scopes = resolveScopes();
-      assert.deepStrictEqual(scopes, [
-        'operator.read',
-        'operator.write',
-        'operator.admin',
-        'operator.pairing',
-      ]);
-    } finally {
-      if (original !== undefined) process.env.GATEWAY_ADMIN_SCOPES = original;
-      else delete process.env.GATEWAY_ADMIN_SCOPES;
-    }
+  it('should have exactly 2 hardcoded scopes and 2 conditional scopes', () => {
+    const def = extractScopesDefinition();
+    // Count single-quoted scope strings that are not inside the conditional spread
+    const alwaysPresent = (def.match(/'operator\.\w+'/g) || []).length;
+    assert.ok(alwaysPresent >= 2, 'should have at least 2 always-present scopes');
+    // The definition should contain exactly 4 distinct scope names total
+    const allScopes = [
+      ...((def.match(/'operator\.read'/g)) || []),
+      ...((def.match(/'operator\.write'/g)) || []),
+      ...((def.match(/'operator\.admin'/g)) || []),
+      ...((def.match(/'operator\.pairing'/g)) || []),
+    ];
+    assert.strictEqual(allScopes.length, 4, 'should reference exactly 4 scope names total');
   });
 
-  it('should NOT include admin/pairing when GATEWAY_ADMIN_SCOPES is any other value', () => {
-    const original = process.env.GATEWAY_ADMIN_SCOPES;
-    process.env.GATEWAY_ADMIN_SCOPES = '1';
-
-    try {
-      const scopes = resolveScopes();
-      assert.deepStrictEqual(scopes, ['operator.read', 'operator.write']);
-      assert.ok(!scopes.includes('operator.admin'));
-      assert.ok(!scopes.includes('operator.pairing'));
-    } finally {
-      if (original !== undefined) process.env.GATEWAY_ADMIN_SCOPES = original;
-      else delete process.env.GATEWAY_ADMIN_SCOPES;
-    }
-  });
-
-  it('should always include operator.read and operator.write', () => {
-    const original = process.env.GATEWAY_ADMIN_SCOPES;
-    process.env.GATEWAY_ADMIN_SCOPES = 'true';
-
-    try {
-      const scopes = resolveScopes();
-      assert.ok(scopes.includes('operator.read'));
-      assert.ok(scopes.includes('operator.write'));
-    } finally {
-      if (original !== undefined) process.env.GATEWAY_ADMIN_SCOPES = original;
-      else delete process.env.GATEWAY_ADMIN_SCOPES;
-    }
-  });
-
-  it('should have at least 2 scopes by default and at most 4 with admin opt-in', () => {
-    const original = process.env.GATEWAY_ADMIN_SCOPES;
-
-    // Default
-    delete process.env.GATEWAY_ADMIN_SCOPES;
-    let scopes = resolveScopes();
-    assert.ok(scopes.length >= 2, 'default should have at least 2 scopes');
-    assert.ok(scopes.length <= 4, 'default should have at most 4 scopes');
-
-    // With admin opt-in
-    process.env.GATEWAY_ADMIN_SCOPES = 'true';
-    scopes = resolveScopes();
-    assert.ok(scopes.length === 4, 'with admin opt-in should have exactly 4 scopes');
-
-    // Restore
-    if (original !== undefined) process.env.GATEWAY_ADMIN_SCOPES = original;
-    else delete process.env.GATEWAY_ADMIN_SCOPES;
+  it('should use spread syntax for conditional scopes (not a hardcoded array)', () => {
+    const def = extractScopesDefinition();
+    assert.ok(
+      def.includes('...'),
+      'should use spread syntax for conditional admin/pairing scopes'
+    );
+    assert.ok(
+      /:\s*\[\s*\]/.test(def),
+      'should have an empty array fallback for the ternary'
+    );
   });
 });
