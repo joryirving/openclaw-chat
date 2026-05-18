@@ -1317,7 +1317,7 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
   const timeoutHandle = setTimeout(() => controller.abort(), LINK_PREVIEW_TIMEOUT_MS);
 
   try {
-    while (redirectCount <= MAX_REDIRECTS) {
+    while (redirectCount < MAX_REDIRECTS) {
       const parsedUrl = new URL(currentUrl);
 
       // Validate each hop's hostname (with DNS resolution for rebinding protection)
@@ -1358,6 +1358,12 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
     if (!finalResponse || !finalResponse.ok) {
       const status = finalResponse?.status || 502;
       return res.status(status >= 300 && status < 400 ? 400 : 502).json({ error: `Upstream request failed (${status})` });
+    }
+
+    // Validate the final resolved URL is not a private host (catches last-hop SSRF)
+    const finalUrlParsed = finalResponse.url ? new URL(finalResponse.url) : null;
+    if (finalUrlParsed && isForbiddenLinkPreviewHost(finalUrlParsed.hostname, { resolveDns: true })) {
+      return res.status(400).json({ error: 'Final redirect target is a local/private host' });
     }
 
     const contentType = String(finalResponse.headers.get('content-type') || '').toLowerCase();
