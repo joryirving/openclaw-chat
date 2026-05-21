@@ -1352,7 +1352,7 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
     return res.status(400).json({ error: 'Only http(s) URLs are supported' });
   }
 
-  if (isForbiddenLinkPreviewHost(targetUrl.hostname)) {
+  if (await isForbiddenLinkPreviewHost(targetUrl.hostname)) {
     return res.status(400).json({ error: 'Local/private hosts are not allowed for previews' });
   }
 
@@ -1369,7 +1369,7 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
       const parsedUrl = new URL(currentUrl);
 
       // Validate each hop's hostname (with DNS resolution for rebinding protection)
-      if (isForbiddenLinkPreviewHost(parsedUrl.hostname, { resolveDns: true })) {
+      if (await isForbiddenLinkPreviewHost(parsedUrl.hostname, { resolveDns: true })) {
         clearTimeout(timeoutHandle);
         return res.status(400).json({ error: 'Redirect target is a local/private host' });
       }
@@ -1410,7 +1410,7 @@ app.get('/api/link-preview', isAuthenticated, async (req, res) => {
 
     // Validate the final resolved URL is not a private host (catches last-hop SSRF)
     const finalUrlParsed = finalResponse.url ? new URL(finalResponse.url) : null;
-    if (finalUrlParsed && isForbiddenLinkPreviewHost(finalUrlParsed.hostname, { resolveDns: true })) {
+    if (finalUrlParsed && await isForbiddenLinkPreviewHost(finalUrlParsed.hostname, { resolveDns: true })) {
       return res.status(400).json({ error: 'Final redirect target is a local/private host' });
     }
 
