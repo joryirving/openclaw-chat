@@ -102,3 +102,22 @@ test('invalid URLs fall back gracefully', () => {
   const req2 = makeReq('http', 'localhost:3000', {}, { return_to: 'misochat://:invalid' });
   assert.equal(getReturnTo(req2, '/', 'mobile'), '/');
 });
+
+test('path traversal in relative paths stays relative and safe', () => {
+  const req = makeReq('http', 'localhost:3000', { return_to: '/../etc/passwd' }, null);
+  assert.equal(getReturnTo(req, '/', 'web'), '/../etc/passwd');
+
+  const req2 = makeReq('http', 'localhost:3000', {}, { return_to: '/foo/../../bar' });
+  assert.equal(getReturnTo(req2, '/', 'web'), '/foo/../../bar');
+
+  const req3 = makeReq('http', 'localhost:3000', { return_to: '/..%2F..%2Fetc/passwd' }, null);
+  assert.equal(getReturnTo(req3, '/', 'web'), '/..%2F..%2Fetc/passwd');
+});
+
+test('same-origin absolute URL with path traversal normalizes to relative path', () => {
+  const req = makeReq('http', 'localhost:3000', { return_to: 'http://localhost:3000/../dashboard' }, null);
+  assert.equal(getReturnTo(req, '/', 'web'), '/dashboard');
+
+  const req2 = makeReq('http', 'localhost:3000', {}, { return_to: 'http://localhost:3000/foo/../../bar' });
+  assert.equal(getReturnTo(req2, '/', 'web'), '/bar');
+});
