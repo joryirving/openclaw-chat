@@ -521,7 +521,15 @@ function getReturnTo(req, fallback = '/', mode = 'any') {
       : '');
 
   if (!raw) return fallback;
-  if (raw.startsWith('/')) return raw;
+  if (raw.startsWith('/')) {
+    // Normalize path segments (e.g., /foo/../bar → /bar) as defense-in-depth
+    try {
+      const normalized = new URL('http://x' + raw);
+      return normalized.pathname + normalized.search + normalized.hash || '/';
+    } catch {
+      return fallback;
+    }
+  }
 
   try {
     const parsed = new URL(raw);

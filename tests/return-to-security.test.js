@@ -103,14 +103,15 @@ test('invalid URLs fall back gracefully', () => {
   assert.equal(getReturnTo(req2, '/', 'mobile'), '/');
 });
 
-test('path traversal in relative paths stays relative and safe', () => {
+test('path traversal in relative paths is normalized by getReturnTo', () => {
   const req = makeReq('http', 'localhost:3000', { return_to: '/../etc/passwd' }, null);
-  assert.equal(getReturnTo(req, '/', 'web'), '/../etc/passwd');
+  assert.equal(getReturnTo(req, '/', 'web'), '/etc/passwd');
 
   const req2 = makeReq('http', 'localhost:3000', {}, { return_to: '/foo/../../bar' });
-  assert.equal(getReturnTo(req2, '/', 'web'), '/foo/../../bar');
+  assert.equal(getReturnTo(req2, '/', 'web'), '/bar');
 
   const req3 = makeReq('http', 'localhost:3000', { return_to: '/..%2F..%2Fetc/passwd' }, null);
+  // %2F is not decoded by URL class, so it stays as a literal segment
   assert.equal(getReturnTo(req3, '/', 'web'), '/..%2F..%2Fetc/passwd');
 });
 
