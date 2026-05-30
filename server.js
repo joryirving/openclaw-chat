@@ -21,7 +21,7 @@ const securityMiddleware = require('./security');
 const { reactions } = require('./lib/db');
 const { parseGatewayReactionEvent } = require('./lib/reaction-events');
 
-const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps } = require('./lib/ssrf-validation');
+const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('./lib/ssrf-validation');
 
 const app = express();
 const server = http.createServer(app);
@@ -86,34 +86,6 @@ const MOBILE_UPDATE_CACHE_TTL_MS = Number(process.env.MOBILE_UPDATE_CACHE_TTL_MS
 // In-memory cache: process-level only (not shared across multiple server instances behind LB)
 let mobileUpdateCache = null;
 let mobileUpdateCacheTime = 0;
-function isPrivateIPv4(hostname) {
-  if (!/^\d+\.\d+\.\d+\.\d+$/.test(hostname)) return false;
-  const octets = hostname.split('.').map((part) => Number(part));
-  if (octets.length !== 4 || octets.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) {
-    return false;
-  }
-
-  const [a, b] = octets;
-  return (
-    a === 10
-    || a === 127
-    || (a === 169 && b === 254)
-    || (a === 172 && b >= 16 && b <= 31)
-    || (a === 192 && b === 168)
-  );
-}
-
-function isPrivateIPv6(hostname) {
-  const normalized = String(hostname || '').toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
-  return (
-    normalized === '::1'
-    || normalized === '0:0:0:0:0:0:0:1'
-    || normalized.startsWith('fe80:')
-    || normalized.startsWith('fc')
-    || normalized.startsWith('fd')
-  );
-}
-
 
 function decodeHtmlEntities(value) {
   return String(value || '')
