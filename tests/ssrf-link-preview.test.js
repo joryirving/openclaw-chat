@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 // Import the SSRF validation helpers from the dedicated module
-const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps } = require('../lib/ssrf-validation');
+const { isForbiddenLinkPreviewHost, hostResolvesToPrivate, resolveHostToIps, isPrivateIPv4, isPrivateIPv6 } = require('../lib/ssrf-validation');
 
 // ---- Unit tests for SSRF validation helpers ----
 
@@ -160,4 +160,65 @@ test('DNS resolution blocks hostnames that resolve to private addresses', async 
 test('DNS resolution allows hostnames that resolve only to public addresses', async () => {
   const resolveHostToIps = async () => ['93.184.216.34'];
   assert.equal(await isForbiddenLinkPreviewHost('public.example', { resolveHostToIps }), false);
+});
+
+// ---- Regression test: isPrivateIPv4 / isPrivateIPv6 must cover all SSRF-relevant ranges ----
+
+test('isPrivateIPv4 rejects non-IP hostnames', () => {
+  assert.equal(isPrivateIPv4('localhost'), false);
+  assert.equal(isPrivateIPv4('example.com'), false);
+  assert.equal(isPrivateIPv4('192.168.1'), false);
+  assert.equal(isPrivateIPv4('256.1.1.1'), false);
+});
+
+test('isPrivateIPv4 detects all private IPv4 ranges', () => {
+  // Class A private
+  assert.equal(isPrivateIPv4('10.0.0.1'), true);
+  assert.equal(isPrivateIPv4('10.255.255.255'), true);
+  // Loopback
+  assert.equal(isPrivateIPv4('127.0.0.1'), true);
+  assert.equal(isPrivateIPv4('127.255.255.255'), true);
+  // Link-local (169.254.0.0/16)
+  assert.equal(isPrivateIPv4('169.254.0.0'), true);
+  assert.equal(isPrivateIPv4('169.254.169.254'), true);
+  // Class B private (172.16.0.0/12)
+  assert.equal(isPrivateIPv4('172.16.0.1'), true);
+  assert.equal(isPrivateIPv4('172.31.255.255'), true);
+  // Class C private (192.168.0.0/16)
+  assert.equal(isPrivateIPv4('192.168.0.1'), true);
+  assert.equal(isPrivateIPv4('192.168.255.255'), true);
+  // IPv4 broadcast
+  assert.equal(isPrivateIPv4('255.255.255.255'), true);
+});
+
+test('isPrivateIPv4 allows public IPv4 addresses', () => {
+  assert.equal(isPrivateIPv4('1.1.1.1'), false);
+  assert.equal(isPrivateIPv4('8.8.8.8'), false);
+  assert.equal(isPrivateIPv4('142.250.80.46'), false);
+});
+
+test('isPrivateIPv6 detects all private IPv6 ranges', () => {
+  // Loopback
+  assert.equal(isPrivateIPv6('::1'), true);
+  assert.equal(isPrivateIPv6('0:0:0:0:0:0:0:1'), true);
+  // Unspecified
+  assert.equal(isPrivateIPv6('::'), true);
+  // Link-local
+  assert.equal(isPrivateIPv6('fe80::1'), true);
+  assert.equal(isPrivateIPv6('fe80::abcd'), true);
+  // Unique-local (fc00::/7)
+  assert.equal(isPrivateIPv6('fc00::1'), true);
+  assert.equal(isPrivateIPv6('fd00::1'), true);
+});
+
+test('isPrivateIPv6 allows public IPv6 addresses', () => {
+  assert.equal(isPrivateIPv6('2001:db8::1'), false);
+  assert.equal(isPrivateIPv6('2606:4700::1'), false);
+});
+
+test('isPrivateIPv4 and isPrivateIPv6 are used by hostResolvesToPrivate', async () => {
+  const result = await hostResolvesToPrivate('127.0.0.1');
+  assert.equal(result, true);
+  const ipv6Result = await hostResolvesToPrivate('::1');
+  assert.equal(ipv6Result, true);
 });
